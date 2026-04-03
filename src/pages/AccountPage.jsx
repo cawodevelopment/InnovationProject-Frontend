@@ -610,7 +610,47 @@ function AccountPage() {
       <h1>Your account</h1>
 
       {isLoading ? (
-        <p className="muted">Loading your account...</p>
+        <div className="account-skeleton" aria-hidden="true">
+          <div className="account-skeleton-grid">
+            <div className="account-skeleton-block">
+              <div className="skeleton-line account-skeleton-label" />
+              <div className="skeleton-line account-skeleton-input" />
+            </div>
+            <div className="account-skeleton-block">
+              <div className="skeleton-line account-skeleton-label" />
+              <div className="skeleton-line account-skeleton-input" />
+            </div>
+          </div>
+
+          <div className="account-skeleton-block account-skeleton-wide">
+            <div className="skeleton-line account-skeleton-label" />
+            <div className="skeleton-line account-skeleton-input" />
+          </div>
+
+          <div className="account-skeleton-block account-skeleton-wide">
+            <div className="skeleton-line account-skeleton-label" />
+            <div className="skeleton-line account-skeleton-input" />
+            <div className="account-skeleton-pills">
+              <div className="skeleton-line account-skeleton-pill" />
+              <div className="skeleton-line account-skeleton-pill" />
+              <div className="skeleton-line account-skeleton-pill" />
+            </div>
+          </div>
+
+          <div className="account-skeleton-block account-skeleton-wide">
+            <div className="skeleton-line account-skeleton-label" />
+            <div className="skeleton-line account-skeleton-input" />
+            <div className="account-skeleton-pills">
+              <div className="skeleton-line account-skeleton-pill" />
+              <div className="skeleton-line account-skeleton-pill" />
+            </div>
+          </div>
+
+          <div className="account-skeleton-actions">
+            <div className="skeleton-line account-skeleton-button" />
+            <div className="skeleton-line account-skeleton-button" />
+          </div>
+        </div>
       ) : errorMessage ? (
         <p className="error-banner">{errorMessage}</p>
       ) : profile ? (

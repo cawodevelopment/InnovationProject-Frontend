@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -25,10 +26,21 @@ function formatList(items) {
 }
 
 function CreatePage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [prompt, setPrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [publishingRecipeIds, setPublishingRecipeIds] = useState([])
   const [errorMessage, setErrorMessage] = useState('')
   const [recipes, setRecipes] = useState([])
+
+  useEffect(() => {
+    const returnedRecipes = location.state?.recipes
+
+    if (Array.isArray(returnedRecipes)) {
+      setRecipes(returnedRecipes)
+    }
+  }, [location.state])
 
   const recipesEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -66,13 +78,28 @@ function CreatePage() {
 
       const payload = await response.json().catch(() => null)
 
+      console.log('Recipe generation response:', { status: response.status, payload, payloadType: typeof payload })
+
       if (!response.ok || payload?.success === false) {
         setErrorMessage(payload?.message ?? payload?.error?.message ?? 'Failed to generate recipes')
         return
       }
 
-      setRecipes(Array.isArray(payload?.data) ? payload.data : [])
-    } catch {
+      if (!Array.isArray(payload?.data)) {
+        console.error('Unexpected generation response:', {
+          hasData: !!payload?.data,
+          dataType: typeof payload?.data,
+          payload,
+        })
+        setErrorMessage(
+          `Unexpected generation response: recipes not found (received: ${typeof payload?.data})`,
+        )
+        return
+      }
+
+      setRecipes(payload.data)
+    } catch (error) {
+      console.error('Recipe generation error:', error)
       setErrorMessage('Failed to generate recipes')
     } finally {
       setIsGenerating(false)
@@ -88,12 +115,85 @@ function CreatePage() {
     event.currentTarget.form?.requestSubmit()
   }
 
+  const handlePublishRecipe = async (recipeId) => {
+    if (!recipeId || publishingRecipeIds.includes(recipeId)) {
+      console.warn('Publish recipe: missing or duplicate ID', { recipeId, publishingRecipeIds })
+      return
+    }
+
+    setPublishingRecipeIds((previous) => [...previous, recipeId])
+    setErrorMessage('')
+
+    const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
+    const publishEndpoint = normalizedBaseUrl
+      ? `${normalizedBaseUrl.replace(/\/$/, '')}/recipes/${encodeURIComponent(recipeId)}/publish`
+      : `/recipes/${encodeURIComponent(recipeId)}/publish`
+
+    console.log('Publishing recipe:', { recipeId, normalizedBaseUrl, publishEndpoint })
+
+    try {
+      const response = await fetch(publishEndpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({}),
+      })
+
+      console.log('Publish response status:', response.status)
+
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok) {
+        // If response failed and we don't have JSON, capture the raw text
+        let errorMsg = `Failed to publish recipe (${response.status})`
+
+        if (payload?.message || payload?.error?.message) {
+          errorMsg = payload.message ?? payload.error.message
+        }
+
+        console.error('Publish recipe error:', {
+          status: response.status,
+          payload,
+          responseOk: response.ok,
+        })
+        setErrorMessage(errorMsg)
+        return
+      }
+
+      if (payload?.success === false) {
+        const errorMsg = payload?.message ?? payload?.error?.message ?? 'Failed to publish recipe'
+        console.error('Publish recipe error:', { status: response.status, payload })
+        setErrorMessage(errorMsg)
+        return
+      }
+
+      if (!payload) {
+        console.warn('Publish recipe received empty response:', {
+          status: response.status,
+          headers: response.headers,
+        })
+        setErrorMessage('Backend returned no response data')
+        return
+      }
+
+      console.log('Recipe published successfully')
+      setRecipes((previous) => previous.filter((recipe) => recipe.id !== recipeId))
+    } catch (error) {
+      console.error('Publish recipe network error:', error)
+      setErrorMessage('Failed to connect. Check the backend is running and your connection is stable.')
+    } finally {
+      setPublishingRecipeIds((previous) => previous.filter((id) => id !== recipeId))
+    }
+  }
+
   return (
     <section className="page-card create-page">
       <p className="eyebrow">Create</p>
       <h1>Generate recipes</h1>
       <p className="muted">
-        Write a prompt below and the app will request recipe drafts from the backend.
+        Write a prompt below.
       </p>
 
       <div className="recipe-results-anchor">
@@ -101,12 +201,16 @@ function CreatePage() {
           <div className="create-loading" aria-live="polite" aria-busy="true">
             <div className="create-loading-spinner" aria-hidden="true" />
             <p className="create-loading-title">Generating recipe drafts</p>
-            <p className="create-loading-text">This can take a moment while the backend processes your prompt.</p>
+            <p className="create-loading-text">This may take a moment.</p>
           </div>
         ) : recipes.length > 0 ? (
           <div className="recipe-results">
-            {recipes.map((recipe) => (
-              <article className="recipe-card" key={recipe.id}>
+            {recipes.map((recipe) => {
+              const isPublished = String(recipe.status).toUpperCase() === 'PUBLISHED'
+              const isPublishing = publishingRecipeIds.includes(recipe.id)
+
+              return (
+                <article className="recipe-card" key={recipe.id}>
                 <div className="recipe-header">
                   <div>
                     <p className="recipe-status">{recipe.status}</p>
@@ -168,15 +272,32 @@ function CreatePage() {
                 </div>
 
                 <div className="recipe-actions">
-                  <button type="button" className="recipe-action-button">
-                    Save recipe
+                  <button
+                    type="button"
+                    className="recipe-action-button"
+                    onClick={() => handlePublishRecipe(recipe.id)}
+                    disabled={isPublished || isPublishing}
+                  >
+                    {isPublished ? 'Published' : isPublishing ? 'Saving...' : 'Save recipe'}
                   </button>
-                  <button type="button" className="recipe-action-button">
+                  <button
+                    type="button"
+                    className="recipe-action-button recipe-action-refine"
+                    onClick={() =>
+                      navigate(`/drafts/${encodeURIComponent(recipe.id)}/refine`, {
+                        state: {
+                          recipe,
+                          recipes,
+                        },
+                      })
+                    }
+                  >
                     Refine it
                   </button>
                 </div>
-              </article>
-            ))}
+                </article>
+              )
+            })}
           </div>
         ) : (
           <div className="create-placeholder" aria-hidden="true">

@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import AccountPage from './pages/AccountPage.jsx'
 import CreatePage from './pages/CreatePage.jsx'
 import HomePage from './pages/HomePage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
+import DraftRefinePage from './pages/DraftRefinePage.jsx'
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx'
+import RefineRecipePage from './pages/RefineRecipePage.jsx'
+import RecipeDetailPage from './pages/RecipeDetailPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -42,9 +46,11 @@ function clearAuthState() {
 }
 
 function App() {
+  const location = useLocation()
   const navigate = useNavigate()
   const isLoggedIn = getIsLoggedIn()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const isPrivacyPolicyRoute = location.pathname === '/privacy-policy'
 
   const logoutEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -186,11 +192,32 @@ function App() {
             element={isLoggedIn ? <CreatePage /> : <Navigate to="/login" replace />}
           />
           <Route
+            path="/recipes/:recipeId"
+            element={isLoggedIn ? <RecipeDetailPage /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/recipes/:recipeId/refine"
+            element={isLoggedIn ? <RefineRecipePage /> : <Navigate to="/login" replace />}
+          />
+          <Route
+            path="/drafts/:recipeId/refine"
+            element={isLoggedIn ? <DraftRefinePage /> : <Navigate to="/login" replace />}
+          />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route
             path="*"
             element={<Navigate to={isLoggedIn ? '/' : '/login'} replace />}
           />
         </Routes>
       </main>
+
+      {!isPrivacyPolicyRoute ? (
+        <footer className="app-footer">
+          <Link to="/privacy-policy" className="app-footer-link">
+            Privacy Policy
+          </Link>
+        </footer>
+      ) : null}
     </div>
   )
 }
