@@ -25,63 +25,6 @@ function formatList(items) {
   return items.join(', ')
 }
 
-function splitCsv(value) {
-  if (!value) {
-    return undefined
-  }
-
-  const items = String(value)
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-
-  return items.length > 0 ? items : undefined
-}
-
-function toNumber(value, options = {}) {
-  if (value === '' || value === null || value === undefined) {
-    return undefined
-  }
-
-  const parsedValue = Number(value)
-
-  if (!Number.isFinite(parsedValue)) {
-    return undefined
-  }
-
-  if (options.integer && !Number.isInteger(parsedValue)) {
-    return undefined
-  }
-
-  if (typeof options.min === 'number' && parsedValue < options.min) {
-    return undefined
-  }
-
-  if (typeof options.max === 'number' && parsedValue > options.max) {
-    return undefined
-  }
-
-  return parsedValue
-}
-
-function normalizeFilters(safeFilters) {
-  const normalized = {
-    difficulty: safeFilters.difficulty ? String(safeFilters.difficulty).trim() : undefined,
-    minPrepTimeInMinutes: toNumber(safeFilters.minPrepTimeInMinutes, { min: 0, integer: true }),
-    maxPrepTimeInMinutes: toNumber(safeFilters.maxPrepTimeInMinutes, { min: 0, integer: true }),
-    minCookingTimeInMinutes: toNumber(safeFilters.minCookingTimeInMinutes, { min: 0, integer: true }),
-    maxCookingTimeInMinutes: toNumber(safeFilters.maxCookingTimeInMinutes, { min: 0, integer: true }),
-    minServings: toNumber(safeFilters.minServings, { min: 1, integer: true }),
-    maxServings: toNumber(safeFilters.maxServings, { min: 1, integer: true }),
-    minRating: toNumber(safeFilters.minRating, { min: 0, max: 5, integer: true }),
-    maxRating: toNumber(safeFilters.maxRating, { min: 0, max: 5, integer: true }),
-    dietaryPreferences: splitCsv(safeFilters.dietaryPreferences),
-    excludeAllergens: splitCsv(safeFilters.excludeAllergens),
-  }
-
-  return normalized
-}
-
 function RecipeDetailSkeleton() {
   return (
     <div className="recipe-results recipe-results-loading">
@@ -148,19 +91,6 @@ function DraftRefinePage() {
   const [prompt, setPrompt] = useState('')
   const [isRefining, setIsRefining] = useState(false)
   const [refinedRecipe, setRefinedRecipe] = useState(null)
-  const [safeFilters, setSafeFilters] = useState({
-    difficulty: '',
-    minPrepTimeInMinutes: '',
-    maxPrepTimeInMinutes: '',
-    minCookingTimeInMinutes: '',
-    maxCookingTimeInMinutes: '',
-    minServings: '',
-    maxServings: '',
-    minRating: '',
-    maxRating: '',
-    dietaryPreferences: '',
-    excludeAllergens: '',
-  })
 
   const recipesEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -254,13 +184,6 @@ function DraftRefinePage() {
     event.currentTarget.form?.requestSubmit()
   }
 
-  const handleFilterChange = (fieldName) => (event) => {
-    setSafeFilters((previous) => ({
-      ...previous,
-      [fieldName]: event.target.value,
-    }))
-  }
-
   const handleBack = () => {
     const currentRecipe = refinedRecipe ?? recipe
     const baseRecipes = recipesSnapshot.length > 0 ? recipesSnapshot : currentRecipe ? [currentRecipe] : []
@@ -291,21 +214,23 @@ function DraftRefinePage() {
     setIsRefining(true)
     setErrorMessage('')
     setRefinedRecipe(null)
-    const normalized = normalizeFilters(safeFilters)
 
-    const refineEndpoint = `${recipesEndpoint.replace(/\/$/, '')}/${encodeURIComponent(recipeId)}/refine`
+    const baseRecipeEndpoint = `${recipesEndpoint.replace(/\/$/, '')}/${encodeURIComponent(recipeId)}`
 
-    fetch(refineEndpoint, {
+    fetch(baseRecipeEndpoint, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
       credentials: 'include',
-      body: JSON.stringify({ prompt: trimmedPrompt, filters: normalized }),
+      body: JSON.stringify({ prompt: trimmedPrompt }),
     })
-      .then((response) => response.json().catch(() => null))
-      .then((payload) => {
-        if (!payload || payload?.success === false) {
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null)
+        return { ok: response.ok, payload }
+      })
+      .then(({ ok, payload }) => {
+        if (!ok || !payload || payload?.success === false) {
           setErrorMessage(payload?.message ?? payload?.error?.message ?? 'Failed to refine recipe')
           setIsRefining(false)
           return
@@ -399,122 +324,19 @@ function DraftRefinePage() {
         Back to generate recipes
       </button>
 
-      <div className="refine-filters-row">
-        <input
-          className="refine-filter-input"
-          type="text"
-          placeholder="Difficulty"
-          aria-label="Difficulty"
-          value={safeFilters.difficulty}
-          onChange={handleFilterChange('difficulty')}
-        />
-        <input
-          className="refine-filter-input"
-          type="number"
-          min="0"
-          step="1"
-          placeholder="Min Prep"
-          aria-label="Minimum prep time in minutes"
-          value={safeFilters.minPrepTimeInMinutes}
-          onChange={handleFilterChange('minPrepTimeInMinutes')}
-        />
-        <input
-          className="refine-filter-input"
-          type="number"
-          min="0"
-          step="1"
-          placeholder="Max Prep"
-          aria-label="Maximum prep time in minutes"
-          value={safeFilters.maxPrepTimeInMinutes}
-          onChange={handleFilterChange('maxPrepTimeInMinutes')}
-        />
-        <input
-          className="refine-filter-input"
-          type="number"
-          min="0"
-          step="1"
-          placeholder="Min Cook"
-          aria-label="Minimum cooking time in minutes"
-          value={safeFilters.minCookingTimeInMinutes}
-          onChange={handleFilterChange('minCookingTimeInMinutes')}
-        />
-        <input
-          className="refine-filter-input"
-          type="number"
-          min="0"
-          step="1"
-          placeholder="Max Cook"
-          aria-label="Maximum cooking time in minutes"
-          value={safeFilters.maxCookingTimeInMinutes}
-          onChange={handleFilterChange('maxCookingTimeInMinutes')}
-        />
-        <input
-          className="refine-filter-input"
-          type="number"
-          min="1"
-          step="1"
-          placeholder="Min Servings"
-          aria-label="Minimum servings"
-          value={safeFilters.minServings}
-          onChange={handleFilterChange('minServings')}
-        />
-        <input
-          className="refine-filter-input"
-          type="number"
-          min="1"
-          step="1"
-          placeholder="Max Servings"
-          aria-label="Maximum servings"
-          value={safeFilters.maxServings}
-          onChange={handleFilterChange('maxServings')}
-        />
-        <input
-          className="refine-filter-input"
-          type="number"
-          min="0"
-          max="5"
-          step="1"
-          placeholder="Min Rating"
-          aria-label="Minimum rating"
-          value={safeFilters.minRating}
-          onChange={handleFilterChange('minRating')}
-        />
-        <input
-          className="refine-filter-input"
-          type="number"
-          min="0"
-          max="5"
-          step="1"
-          placeholder="Max Rating"
-          aria-label="Maximum rating"
-          value={safeFilters.maxRating}
-          onChange={handleFilterChange('maxRating')}
-        />
-        <input
-          className="refine-filter-input"
-          type="text"
-          placeholder="Dietary (csv)"
-          aria-label="Dietary preferences as comma-separated values"
-          value={safeFilters.dietaryPreferences}
-          onChange={handleFilterChange('dietaryPreferences')}
-        />
-        <input
-          className="refine-filter-input"
-          type="text"
-          placeholder="Exclude allergens (csv)"
-          aria-label="Exclude allergens as comma-separated values"
-          value={safeFilters.excludeAllergens}
-          onChange={handleFilterChange('excludeAllergens')}
-        />
-      </div>
-
-      <div className="recipe-results-anchor">
+      <div className={`recipe-results-anchor${isRefining ? ' refine-results-anchor-loading' : ''}`}>
         {isLoading ? <RecipeDetailSkeleton /> : null}
-        {!isLoading && !errorMessage && recipe ? renderRecipeCard(recipe) : null}
+        {isRefining ? (
+          <div className="create-loading" aria-live="polite" aria-busy="true">
+            <div className="create-loading-spinner" aria-hidden="true" />
+            <p className="create-loading-title">Refining recipe</p>
+            <p className="create-loading-text">This may take a moment.</p>
+          </div>
+        ) : null}
+        {!isLoading && !isRefining && !errorMessage && recipe ? renderRecipeCard(recipe) : null}
         {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
       </div>
 
-      {isRefining ? <RecipeDetailSkeleton /> : null}
 
       {refinedRecipe && !isRefining ? renderRecipeCard(refinedRecipe) : null}
 

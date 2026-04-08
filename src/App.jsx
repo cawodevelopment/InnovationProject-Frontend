@@ -10,6 +10,7 @@ import PrivacyPolicyPage from './pages/PrivacyPolicyPage.jsx'
 import RefineRecipePage from './pages/RefineRecipePage.jsx'
 import RecipeDetailPage from './pages/RecipeDetailPage.jsx'
 import RegisterPage from './pages/RegisterPage.jsx'
+import AIAssistant from './components/AIAssistant.jsx'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000
@@ -50,7 +51,9 @@ function App() {
   const navigate = useNavigate()
   const isLoggedIn = getIsLoggedIn()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [homeSearchValue, setHomeSearchValue] = useState('')
   const isPrivacyPolicyRoute = location.pathname === '/privacy-policy'
+  const isHomeRoute = location.pathname === '/'
 
   const logoutEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -152,6 +155,7 @@ function App() {
         ) : (
           <p className="brand">Clove</p>
         )}
+
         <nav className="topnav" aria-label="Main navigation">
           {isLoggedIn ? (
             <>
@@ -169,11 +173,24 @@ function App() {
         </nav>
       </header>
 
+      {isLoggedIn && isHomeRoute ? (
+        <div className="home-search-strip">
+          <div className="home-search-panel" aria-label="Recipe name search">
+            <input
+              type="text"
+              value={homeSearchValue}
+              onChange={(event) => setHomeSearchValue(event.target.value)}
+              placeholder="Search recipe name"
+            />
+          </div>
+        </div>
+      ) : null}
+
       <main className="page-wrap">
         <Routes>
           <Route
             path="/"
-            element={isLoggedIn ? <HomePage /> : <Navigate to="/login" replace />}
+            element={isLoggedIn ? <HomePage searchValue={homeSearchValue} onSearchValueChange={setHomeSearchValue} /> : <Navigate to="/login" replace />}
           />
           <Route
             path="/login"
@@ -218,6 +235,8 @@ function App() {
           </Link>
         </footer>
       ) : null}
+
+      <AIAssistant />
     </div>
   )
 }

@@ -189,7 +189,7 @@ function CreatePage() {
   }
 
   return (
-    <section className="page-card create-page">
+    <section className="page-card create-page create-generate-page">
       <p className="eyebrow">Create</p>
       <h1>Generate recipes</h1>
       <p className="muted">
