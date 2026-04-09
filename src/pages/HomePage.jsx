@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 const MAX_DROPDOWN_RESULTS = 8
@@ -354,7 +355,7 @@ function HomePage({ searchValue = '', onSearchValueChange }) {
     const maxTotal = appliedSafeFilters.maxTotalTimeInMinutes.trim()
 
     if (minTotal || maxTotal) {
-      chips.push({ key: 'total-time', label: `Total time: ${minTotal || 'Any'}-${maxTotal || 'Any'} min` })
+      chips.push({ key: 'total-time', label: `Time: ${minTotal || 'Any'}-${maxTotal || 'Any'} min` })
     }
 
     return chips
@@ -563,7 +564,12 @@ function HomePage({ searchValue = '', onSearchValueChange }) {
         }
 
         if (!response.ok || payload?.success === false) {
-          setErrorMessage(payload?.message ?? payload?.error?.message ?? 'Failed to load recipes')
+          setErrorMessage(
+            toUserSafeErrorMessage(
+              payload?.message ?? payload?.error?.message,
+              'We could not load recipes right now. Please try again in a moment.',
+            ),
+          )
           return
         }
 
@@ -573,7 +579,7 @@ function HomePage({ searchValue = '', onSearchValueChange }) {
           return
         }
 
-        setErrorMessage('Failed to load recipes')
+        setErrorMessage('We could not load recipes right now. Please try again in a moment.')
       } finally {
         if (isActive) {
           setIsLoading(false)
@@ -602,8 +608,8 @@ function HomePage({ searchValue = '', onSearchValueChange }) {
             <option value="Medium">Medium</option>
             <option value="Hard">Hard</option>
           </select>
-          <div className="home-filter-range" aria-label="Total time range in minutes">
-            <input className="home-filter-range-input" type="text" inputMode="numeric" placeholder="Total min" value={safeFilters.minTotalTimeInMinutes} onChange={handleFilterChange('minTotalTimeInMinutes')} />
+          <div className="home-filter-range" aria-label="Time range in minutes">
+            <input className="home-filter-range-input" type="text" inputMode="numeric" placeholder="Time min" value={safeFilters.minTotalTimeInMinutes} onChange={handleFilterChange('minTotalTimeInMinutes')} />
             <span className="home-filter-range-separator">-</span>
             <input className="home-filter-range-input" type="text" inputMode="numeric" placeholder="Max" value={safeFilters.maxTotalTimeInMinutes} onChange={handleFilterChange('maxTotalTimeInMinutes')} />
           </div>

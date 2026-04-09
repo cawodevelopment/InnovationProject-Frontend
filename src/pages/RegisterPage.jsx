@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
 const initialForm = {
   firstname: '',
@@ -122,14 +123,14 @@ function RegisterPage() {
       if (!response.ok || payload?.success === false) {
         setApiResult({
           type: 'error',
-          message: payload?.error?.message ?? 'Registration failed',
+          message: toUserSafeErrorMessage(payload?.error?.message, 'Registration failed'),
         })
         return
       }
 
       setApiResult({
         type: 'success',
-        message: payload?.message ?? 'User registered successfully',
+        message: 'User registered successfully',
       })
 
       setFormData(initialForm)

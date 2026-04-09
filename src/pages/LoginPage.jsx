@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
 const initialForm = {
   email: '',
@@ -101,7 +102,7 @@ function LoginPage() {
       if (!response.ok || payload?.success === false) {
         setApiResult({
           type: 'error',
-          message: payload?.error?.message ?? 'Invalid email or password',
+          message: toUserSafeErrorMessage(payload?.error?.message, 'Invalid email or password'),
         })
         return
       }
@@ -110,7 +111,7 @@ function LoginPage() {
 
       setApiResult({
         type: 'success',
-        message: payload?.message ?? 'User logged in successfully',
+        message: 'User logged in successfully',
       })
 
       navigate('/')

@@ -1,10 +1,93 @@
 import { useState, useEffect, useRef } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+import { useNavigate } from 'react-router-dom';
 
 const LISTEN_OPTIONS = { continuous: true, interimResults: true };
-const SILENCE_TIMEOUT = 5000;
+const NO_SPEECH_TIMEOUT = 5000;
+const POST_SPEECH_TIMEOUT = 1400;
 const TYPE_SPEED = 45;
 const WAKE_WORD = 'okay clove';
+
+const NAVIGATION_INTENTS = [
+  {
+    route: '/',
+    response: 'Opening Home recipes.',
+    phrases: [
+      'recipes',
+      'home',
+      'show recipes',
+      'show my recipes',
+      'go home',
+      'take me home',
+      'open home',
+      'go to home',
+      'open recipes',
+      'show home',
+    ],
+  },
+  {
+    route: '/create',
+    response: 'Opening Create page.',
+    phrases: [
+      'create',
+      'create recipe',
+      'create recipes',
+      'open create',
+      'go to create',
+      'take me to create',
+      'new recipe',
+      'generate recipe',
+      'generate recipes',
+    ],
+  },
+  {
+    route: '/account',
+    response: 'Opening Account page.',
+    phrases: [
+      'account',
+      'open account',
+      'go to account',
+      'take me to account',
+      'show account',
+      'my account',
+      'profile',
+      'open profile',
+    ],
+  },
+  {
+    route: '/privacy-policy',
+    response: 'Opening Privacy Policy.',
+    phrases: [
+      'privacy',
+      'open privacy',
+      'privacy policy',
+      'show privacy policy',
+      'go to privacy',
+      'open privacy policy',
+    ],
+  },
+];
+
+const normalizeCommand = (text) =>
+  String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const getNavigationIntent = (rawText) => {
+  const command = normalizeCommand(rawText);
+
+  if (!command) {
+    return null;
+  }
+
+  return (
+    NAVIGATION_INTENTS.find((intent) =>
+      intent.phrases.some((phrase) => command.includes(phrase))
+    ) ?? null
+  );
+};
 
 const clearRefTimeout = (timerRef) => {
   if (timerRef.current) {
@@ -51,6 +134,7 @@ const useTypewriter = (text, enabled) => {
 };
 
 const AIComponent = () => {
+  const navigate = useNavigate();
   const {
     transcript,
     interimTranscript,
@@ -76,15 +160,34 @@ const AIComponent = () => {
     listening && !wakeWordDetected && !isSpeaking
   );
 
-  const resetConversationState = () => {
+  const resetConversationState = (options = {}) => {
+    const { clearResponse = true } = options;
+
     setWakeWordDetected(false);
     setDisplayText('');
-    setAiResponseText('');
+
+    if (clearResponse) {
+      setAiResponseText('');
+    }
   };
 
-  const endCommandCapture = () => {
+  const endCommandCapture = (options = {}) => {
     resetTranscript();
-    resetConversationState();
+    resetConversationState(options);
+  };
+
+  const handleVoiceCommand = (rawText) => {
+    const intent = getNavigationIntent(rawText);
+
+    if (!intent) {
+      speakResponse(
+        'I can open Home, Create, Account, or Privacy Policy. Please try again.'
+      );
+      return;
+    }
+
+    navigate(intent.route);
+    speakResponse(intent.response);
   };
 
   const speakResponse = (text) => {
@@ -138,9 +241,15 @@ const AIComponent = () => {
 
     clearRefTimeout(silenceTimer);
     silenceTimer.current = setTimeout(() => {
-      endCommandCapture();
+      const finalCommand = (interimTranscript || transcript || '').trim();
+
+      if (finalCommand) {
+        handleVoiceCommand(finalCommand);
+      }
+
+      endCommandCapture({ clearResponse: !finalCommand });
       silenceTimer.current = null;
-    }, SILENCE_TIMEOUT);
+    }, trimmedText ? POST_SPEECH_TIMEOUT : NO_SPEECH_TIMEOUT);
   }, [transcript, interimTranscript, listening, wakeWordDetected, isSpeaking]);
 
   useEffect(

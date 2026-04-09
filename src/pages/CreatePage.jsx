@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -81,7 +82,12 @@ function CreatePage() {
       console.log('Recipe generation response:', { status: response.status, payload, payloadType: typeof payload })
 
       if (!response.ok || payload?.success === false) {
-        setErrorMessage(payload?.message ?? payload?.error?.message ?? 'Failed to generate recipes')
+        setErrorMessage(
+          toUserSafeErrorMessage(
+            payload?.message ?? payload?.error?.message,
+            'We could not generate recipes right now. Please try again in a moment.',
+          ),
+        )
         return
       }
 
@@ -91,16 +97,14 @@ function CreatePage() {
           dataType: typeof payload?.data,
           payload,
         })
-        setErrorMessage(
-          `Unexpected generation response: recipes not found (received: ${typeof payload?.data})`,
-        )
+        setErrorMessage('We could not generate recipes right now. Please try again in a moment.')
         return
       }
 
       setRecipes(payload.data)
     } catch (error) {
       console.error('Recipe generation error:', error)
-      setErrorMessage('Failed to generate recipes')
+      setErrorMessage('We could not generate recipes right now. Please try again in a moment.')
     } finally {
       setIsGenerating(false)
     }
@@ -150,7 +154,10 @@ function CreatePage() {
         let errorMsg = `Failed to publish recipe (${response.status})`
 
         if (payload?.message || payload?.error?.message) {
-          errorMsg = payload.message ?? payload.error.message
+          errorMsg = toUserSafeErrorMessage(
+            payload.message ?? payload.error.message,
+            'We could not publish this recipe right now. Please try again in a moment.',
+          )
         }
 
         console.error('Publish recipe error:', {
@@ -163,7 +170,10 @@ function CreatePage() {
       }
 
       if (payload?.success === false) {
-        const errorMsg = payload?.message ?? payload?.error?.message ?? 'Failed to publish recipe'
+        const errorMsg = toUserSafeErrorMessage(
+          payload?.message ?? payload?.error?.message,
+          'We could not publish this recipe right now. Please try again in a moment.',
+        )
         console.error('Publish recipe error:', { status: response.status, payload })
         setErrorMessage(errorMsg)
         return

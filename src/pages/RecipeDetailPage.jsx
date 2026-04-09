@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -63,7 +64,12 @@ function RecipeDetailPage() {
         }
 
         if (!response.ok || payload?.success === false) {
-          setErrorMessage(payload?.message ?? payload?.error?.message ?? 'Failed to load recipe')
+          setErrorMessage(
+            toUserSafeErrorMessage(
+              payload?.message ?? payload?.error?.message,
+              'We could not load this recipe right now. Please try again in a moment.',
+            ),
+          )
           return
         }
 
@@ -81,7 +87,7 @@ function RecipeDetailPage() {
           return
         }
 
-        setErrorMessage('Failed to load recipe')
+        setErrorMessage('We could not load this recipe right now. Please try again in a moment.')
       } finally {
         if (isActive) {
           setIsLoading(false)
@@ -123,14 +129,19 @@ function RecipeDetailPage() {
       const payload = await response.json().catch(() => null)
 
       if (!response.ok || payload?.success === false) {
-        setErrorMessage(payload?.message ?? payload?.error?.message ?? 'Failed to delete recipe')
+        setErrorMessage(
+          toUserSafeErrorMessage(
+            payload?.message ?? payload?.error?.message,
+            'We could not delete this recipe right now. Please try again in a moment.',
+          ),
+        )
         setIsDeleting(false)
         return
       }
 
       navigate('/', { replace: true })
     } catch {
-      setErrorMessage('Failed to delete recipe')
+      setErrorMessage('We could not delete this recipe right now. Please try again in a moment.')
       setIsDeleting(false)
     }
   }

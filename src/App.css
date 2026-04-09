@@ -401,10 +401,11 @@
 }
 
 .home-filter-actions {
-  margin-left: auto;
+  margin-left: 0;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  flex: 0 0 auto;
 }
 
 .home-filter-action-button {

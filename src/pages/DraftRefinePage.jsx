@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 
@@ -133,7 +134,12 @@ function DraftRefinePage() {
         }
 
         if (!response.ok || payload?.success === false) {
-          setErrorMessage(payload?.message ?? payload?.error?.message ?? 'Failed to load recipe')
+          setErrorMessage(
+            toUserSafeErrorMessage(
+              payload?.message ?? payload?.error?.message,
+              'We could not load this recipe right now. Please try again in a moment.',
+            ),
+          )
           return
         }
 
@@ -152,7 +158,7 @@ function DraftRefinePage() {
           return
         }
 
-        setErrorMessage('Failed to load recipe')
+        setErrorMessage('We could not load this recipe right now. Please try again in a moment.')
       } finally {
         if (isActive) {
           setIsLoading(false)
@@ -231,7 +237,12 @@ function DraftRefinePage() {
       })
       .then(({ ok, payload }) => {
         if (!ok || !payload || payload?.success === false) {
-          setErrorMessage(payload?.message ?? payload?.error?.message ?? 'Failed to refine recipe')
+          setErrorMessage(
+            toUserSafeErrorMessage(
+              payload?.message ?? payload?.error?.message,
+              'We could not refine this recipe right now. Please try again in a moment.',
+            ),
+          )
           setIsRefining(false)
           return
         }
@@ -246,7 +257,7 @@ function DraftRefinePage() {
         setIsRefining(false)
       })
       .catch(() => {
-        setErrorMessage('Failed to refine recipe')
+        setErrorMessage('We could not refine this recipe right now. Please try again in a moment.')
         setIsRefining(false)
       })
       .finally(() => {
