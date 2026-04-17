@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
@@ -81,7 +81,7 @@ function RecipeDetailSkeleton() {
   )
 }
 
-function RefineRecipePage() {
+function RefineRecipePage({ voicePromptRequest = null, voicePromptLiveText = '' }) {
   const navigate = useNavigate()
   const { recipeId } = useParams()
   const [recipe, setRecipe] = useState(null)
@@ -90,6 +90,7 @@ function RefineRecipePage() {
   const [prompt, setPrompt] = useState('')
   const [isRefining, setIsRefining] = useState(false)
   const [refinedRecipe, setRefinedRecipe] = useState(null)
+  const lastVoicePromptRequestId = useRef('')
 
   const recipesEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -176,14 +177,12 @@ function RefineRecipePage() {
     event.currentTarget.form?.requestSubmit()
   }
 
-  const handleRefine = (event) => {
-    event.preventDefault()
-    
-    const trimmedPrompt = prompt.trim()
-    
+  const submitRefinePrompt = (rawPrompt) => {
+    const trimmedPrompt = String(rawPrompt ?? '').trim()
+
     if (!trimmedPrompt) {
       setErrorMessage('Please enter a refine prompt')
-      return
+      return false
     }
 
     setIsRefining(true)
@@ -213,21 +212,61 @@ function RefineRecipePage() {
             ),
           )
           setIsRefining(false)
-          return
+          return false
         }
 
         setRefinedRecipe(payload.data || payload)
         setPrompt('')
         setIsRefining(false)
+        return true
       })
       .catch(() => {
         setErrorMessage('We could not refine this recipe right now. Please try again in a moment.')
         setIsRefining(false)
+        return false
       })
       .finally(() => {
         setIsRefining(false)
       })
+
+    return true
   }
+
+  const handleRefine = (event) => {
+    event.preventDefault()
+    submitRefinePrompt(prompt)
+  }
+
+  useEffect(() => {
+    const requestId = String(voicePromptRequest?.id ?? '')
+    const requestText = String(voicePromptRequest?.text ?? '').trim()
+
+    if (!requestId || !requestText || isRefining) {
+      return
+    }
+
+    if (lastVoicePromptRequestId.current === requestId) {
+      return
+    }
+
+    lastVoicePromptRequestId.current = requestId
+    setPrompt(requestText)
+    submitRefinePrompt(requestText)
+  }, [voicePromptRequest, isRefining])
+
+  useEffect(() => {
+    if (isRefining) {
+      return
+    }
+
+    if (typeof voicePromptLiveText !== 'string') {
+      return
+    }
+
+    setPrompt(voicePromptLiveText)
+  }, [voicePromptLiveText, isRefining])
+
+  const activeRecipe = refinedRecipe ?? recipe
 
   return (
     <section className="page-card create-page refine-page">
@@ -249,53 +288,53 @@ function RefineRecipePage() {
             <p className="create-loading-text">This may take a moment.</p>
           </div>
         ) : null}
-        {!isLoading && !isRefining && !errorMessage && recipe ? (
+        {!isLoading && !isRefining && !errorMessage && activeRecipe ? (
           <div className="recipe-results">
             <article className="recipe-card">
               <div className="recipe-header">
                 <div>
-                  <h2>{recipe.title}</h2>
+                  <h2>{activeRecipe.title}</h2>
                 </div>
               </div>
 
               <div className="recipe-highlights">
                 <div className="recipe-box">
                   <h3>Difficulty</h3>
-                  <p className="recipe-box-value">{recipe.difficulty}</p>
-                  <p className="muted compact">Rating: {recipe.ratingOutOf5}/5</p>
+                  <p className="recipe-box-value">{activeRecipe.difficulty}</p>
+                  <p className="muted compact">Rating: {activeRecipe.ratingOutOf5}/5</p>
                 </div>
 
                 <div className="recipe-box">
                   <h3>Allergen notices</h3>
-                  <p className="recipe-box-value">{formatList(recipe.allergenNotices)}</p>
+                  <p className="recipe-box-value">{formatList(activeRecipe.allergenNotices)}</p>
                 </div>
 
                 <div className="recipe-box">
                   <h3>Dietary restrictions</h3>
-                  <p className="recipe-box-value">{formatList(recipe.dietaryRestrictions)}</p>
+                  <p className="recipe-box-value">{formatList(activeRecipe.dietaryRestrictions)}</p>
                 </div>
 
                 <div className="recipe-box">
                   <h3>Nutrition info</h3>
-                  <p className="recipe-box-value">{recipe.nutritionInfo?.caloriesKcal ?? 'N/A'} kcal</p>
+                  <p className="recipe-box-value">{activeRecipe.nutritionInfo?.caloriesKcal ?? 'N/A'} kcal</p>
                   <p className="muted compact">
-                    Protein: {recipe.nutritionInfo?.proteinG ?? 'N/A'}g · Carbs: {recipe.nutritionInfo?.carbsG ?? 'N/A'}g · Fat:{' '}
-                    {recipe.nutritionInfo?.fatG ?? 'N/A'}g
+                    Protein: {activeRecipe.nutritionInfo?.proteinG ?? 'N/A'}g · Carbs: {activeRecipe.nutritionInfo?.carbsG ?? 'N/A'}g · Fat:{' '}
+                    {activeRecipe.nutritionInfo?.fatG ?? 'N/A'}g
                   </p>
                 </div>
               </div>
 
               <div className="recipe-stats">
-                <span>Prep: {recipe.prepTimeInMinutes} min</span>
-                <span>Cook: {recipe.cookingTimeInMinutes} min</span>
-                <span>Servings: {recipe.servings}</span>
+                <span>Prep: {activeRecipe.prepTimeInMinutes} min</span>
+                <span>Cook: {activeRecipe.cookingTimeInMinutes} min</span>
+                <span>Servings: {activeRecipe.servings}</span>
               </div>
 
               <div className="recipe-section">
                 <h3>Ingredients</h3>
                 <ul>
-                  {Array.isArray(recipe.ingredients)
-                    ? recipe.ingredients.map((item) => <li key={item}>{item}</li>)
+                  {Array.isArray(activeRecipe.ingredients)
+                    ? activeRecipe.ingredients.map((item) => <li key={item}>{item}</li>)
                     : null}
                 </ul>
               </div>
@@ -303,80 +342,17 @@ function RefineRecipePage() {
               <div className="recipe-section">
                 <h3>Instructions</h3>
                 <ol>
-                  {Array.isArray(recipe.instructions)
-                    ? recipe.instructions.map((item) => <li key={item}>{item}</li>)
+                  {Array.isArray(activeRecipe.instructions)
+                    ? activeRecipe.instructions.map((item) => <li key={item}>{item}</li>)
                     : null}
                 </ol>
               </div>
             </article>
+            {refinedRecipe ? <p className="success-banner">Recipe refined successfully.</p> : null}
           </div>
         ) : null}
         {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
       </div>
-
-
-      {refinedRecipe && !isRefining ? (
-        <div className="recipe-results">
-          <article className="recipe-card">
-            <div className="recipe-header">
-              <div>
-                <h2>{refinedRecipe.title}</h2>
-              </div>
-            </div>
-
-            <div className="recipe-highlights">
-              <div className="recipe-box">
-                <h3>Difficulty</h3>
-                <p className="recipe-box-value">{refinedRecipe.difficulty}</p>
-                <p className="muted compact">Rating: {refinedRecipe.ratingOutOf5}/5</p>
-              </div>
-
-              <div className="recipe-box">
-                <h3>Allergen notices</h3>
-                <p className="recipe-box-value">{formatList(refinedRecipe.allergenNotices)}</p>
-              </div>
-
-              <div className="recipe-box">
-                <h3>Dietary restrictions</h3>
-                <p className="recipe-box-value">{formatList(refinedRecipe.dietaryRestrictions)}</p>
-              </div>
-
-              <div className="recipe-box">
-                <h3>Nutrition info</h3>
-                <p className="recipe-box-value">{refinedRecipe.nutritionInfo?.caloriesKcal ?? 'N/A'} kcal</p>
-                <p className="muted compact">
-                  Protein: {refinedRecipe.nutritionInfo?.proteinG ?? 'N/A'}g · Carbs: {refinedRecipe.nutritionInfo?.carbsG ?? 'N/A'}g · Fat:{' '}
-                  {refinedRecipe.nutritionInfo?.fatG ?? 'N/A'}g
-                </p>
-              </div>
-            </div>
-
-            <div className="recipe-stats">
-              <span>Prep: {refinedRecipe.prepTimeInMinutes} min</span>
-              <span>Cook: {refinedRecipe.cookingTimeInMinutes} min</span>
-              <span>Servings: {refinedRecipe.servings}</span>
-            </div>
-
-            <div className="recipe-section">
-              <h3>Ingredients</h3>
-              <ul>
-                {Array.isArray(refinedRecipe.ingredients)
-                  ? refinedRecipe.ingredients.map((item) => <li key={item}>{item}</li>)
-                  : null}
-              </ul>
-            </div>
-
-            <div className="recipe-section">
-              <h3>Instructions</h3>
-              <ol>
-                {Array.isArray(refinedRecipe.instructions)
-                  ? refinedRecipe.instructions.map((item) => <li key={item}>{item}</li>)
-                  : null}
-              </ol>
-            </div>
-          </article>
-        </div>
-      ) : null}
 
       <form className="chat-composer" onSubmit={handleRefine} disabled={isRefining}>
         <label className="sr-only" htmlFor="refinePrompt">

@@ -46,12 +46,27 @@ function clearAuthState() {
   window.localStorage.removeItem('refreshToken')
 }
 
+function getRecipeIdFromPath(path) {
+  const match = path.match(/^\/recipes\/([^/]+)\/?$/)
+  return match?.[1] ?? null
+}
+
 function App() {
   const location = useLocation()
   const navigate = useNavigate()
   const isLoggedIn = getIsLoggedIn()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [homeSearchValue, setHomeSearchValue] = useState('')
+  const [homeRecipes, setHomeRecipes] = useState([])
+  const [createRecipes, setCreateRecipes] = useState([])
+  const [createVoicePromptRequest, setCreateVoicePromptRequest] = useState(null)
+  const [createVoicePromptLiveText, setCreateVoicePromptLiveText] = useState('')
+  const [recipeRefineVoicePromptRequest, setRecipeRefineVoicePromptRequest] = useState(null)
+  const [recipeRefineVoicePromptLiveText, setRecipeRefineVoicePromptLiveText] = useState('')
+  const [draftRefineVoicePromptRequest, setDraftRefineVoicePromptRequest] = useState(null)
+  const [draftRefineVoicePromptLiveText, setDraftRefineVoicePromptLiveText] = useState('')
+  const [createViewResetToken, setCreateViewResetToken] = useState(0)
+  const [voiceSavedDraftId, setVoiceSavedDraftId] = useState('')
   const isPrivacyPolicyRoute = location.pathname === '/privacy-policy'
   const isHomeRoute = location.pathname === '/'
 
@@ -91,9 +106,18 @@ function App() {
 
         const payload = await response.json().catch(() => null)
 
-        if (!response.ok || payload?.success === false) {
-          // Do not force local logout from background refresh attempts.
-          // Users should only be logged out via explicit logout action.
+        if (
+          response.status === 401 ||
+          response.status === 403 ||
+          payload?.success === false ||
+          payload?.status === 'error'
+        ) {
+          clearAuthState()
+          navigate('/login', { replace: true })
+          return
+        }
+
+        if (!response.ok) {
           return
         }
 
@@ -133,6 +157,167 @@ function App() {
     }
   }
 
+  const handleDeleteRecipeViaVoice = async () => {
+    const recipeId = getRecipeIdFromPath(location.pathname)
+
+    if (!recipeId) {
+      return
+    }
+
+    const recipesEndpoint = (() => {
+      const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
+
+      if (!normalizedBaseUrl) {
+        return '/recipes'
+      }
+
+      return `${normalizedBaseUrl.replace(/\/$/, '')}/recipes`
+    })()
+
+    const deleteEndpoint = `${recipesEndpoint.replace(/\/$/, '')}/${encodeURIComponent(recipeId)}`
+
+    try {
+      const response = await fetch(deleteEndpoint, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok || payload?.success === false) {
+        return
+      }
+
+      navigate('/', { replace: true })
+    } catch {
+      // Delete failed silently on voice command
+    }
+  }
+
+  const handleRefineRecipeViaVoice = () => {
+    const recipeId = getRecipeIdFromPath(location.pathname)
+
+    if (!recipeId) {
+      return
+    }
+
+    navigate(`/recipes/${encodeURIComponent(recipeId)}/refine`)
+  }
+
+  const handleRefineDraftViaVoice = (draftRecipe) => {
+    const draftId = draftRecipe?.id
+
+    if (!draftId) {
+      return
+    }
+
+    navigate(`/drafts/${encodeURIComponent(draftId)}/refine`, {
+      state: {
+        recipe: draftRecipe,
+        recipes: createRecipes,
+      },
+    })
+  }
+
+  const handleSaveDraftViaVoice = async (draftRecipe) => {
+    const draftId = draftRecipe?.id
+
+    if (!draftId) {
+      return false
+    }
+
+    const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
+    const publishEndpoint = normalizedBaseUrl
+      ? `${normalizedBaseUrl.replace(/\/$/, '')}/recipes/${encodeURIComponent(draftId)}/publish`
+      : `/recipes/${encodeURIComponent(draftId)}/publish`
+
+    try {
+      const response = await fetch(publishEndpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({}),
+      })
+
+      const payload = await response.json().catch(() => null)
+
+      if (!response.ok || payload?.success === false) {
+        return false
+      }
+
+      setCreateRecipes((previous) => previous.filter((recipe) => recipe.id !== draftId))
+      setVoiceSavedDraftId(String(draftId))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const handleCreatePromptViaVoice = (promptText) => {
+    const trimmedPrompt = String(promptText ?? '').trim()
+
+    if (!trimmedPrompt) {
+      return
+    }
+
+    setCreateVoicePromptLiveText('')
+
+    setCreateVoicePromptRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      text: trimmedPrompt,
+    })
+  }
+
+  const handleCreatePromptLiveViaVoice = (promptText) => {
+    setCreateVoicePromptLiveText(String(promptText ?? ''))
+  }
+
+  const handleRefineRecipePromptViaVoice = (promptText) => {
+    const trimmedPrompt = String(promptText ?? '').trim()
+
+    if (!trimmedPrompt) {
+      return
+    }
+
+    setRecipeRefineVoicePromptLiveText('')
+    setRecipeRefineVoicePromptRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      text: trimmedPrompt,
+    })
+  }
+
+  const handleRefineRecipePromptLiveViaVoice = (promptText) => {
+    setRecipeRefineVoicePromptLiveText(String(promptText ?? ''))
+  }
+
+  const handleRefineDraftPromptViaVoice = (promptText) => {
+    const trimmedPrompt = String(promptText ?? '').trim()
+
+    if (!trimmedPrompt) {
+      return
+    }
+
+    setDraftRefineVoicePromptLiveText('')
+    setDraftRefineVoicePromptRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      text: trimmedPrompt,
+    })
+  }
+
+  const handleRefineDraftPromptLiveViaVoice = (promptText) => {
+    setDraftRefineVoicePromptLiveText(String(promptText ?? ''))
+  }
+
+  const handleResetCreateView = () => {
+    setCreateRecipes([])
+    setCreateVoicePromptRequest(null)
+    setCreateVoicePromptLiveText('')
+    setVoiceSavedDraftId('')
+    setCreateViewResetToken((previous) => previous + 1)
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -159,7 +344,7 @@ function App() {
         <nav className="topnav" aria-label="Main navigation">
           {isLoggedIn ? (
             <>
-              <NavLink to="/create">Create</NavLink>
+              <NavLink to="/create" onClick={handleResetCreateView}>Create</NavLink>
               <NavLink to="/" end>
                 Home
               </NavLink>
@@ -190,7 +375,17 @@ function App() {
         <Routes>
           <Route
             path="/"
-            element={isLoggedIn ? <HomePage searchValue={homeSearchValue} onSearchValueChange={setHomeSearchValue} /> : <Navigate to="/login" replace />}
+            element={
+              isLoggedIn ? (
+                <HomePage
+                  searchValue={homeSearchValue}
+                  onSearchValueChange={setHomeSearchValue}
+                  onRecipesChange={setHomeRecipes}
+                />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
           <Route
             path="/login"
@@ -206,7 +401,19 @@ function App() {
           />
           <Route
             path="/create"
-            element={isLoggedIn ? <CreatePage /> : <Navigate to="/login" replace />}
+            element={
+              isLoggedIn ? (
+                <CreatePage
+                  key={createViewResetToken}
+                  onRecipesChange={setCreateRecipes}
+                  voicePromptRequest={createVoicePromptRequest}
+                  voicePromptLiveText={createVoicePromptLiveText}
+                  voiceSavedDraftId={voiceSavedDraftId}
+                />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
           <Route
             path="/recipes/:recipeId"
@@ -214,11 +421,29 @@ function App() {
           />
           <Route
             path="/recipes/:recipeId/refine"
-            element={isLoggedIn ? <RefineRecipePage /> : <Navigate to="/login" replace />}
+            element={
+              isLoggedIn ? (
+                <RefineRecipePage
+                  voicePromptRequest={recipeRefineVoicePromptRequest}
+                  voicePromptLiveText={recipeRefineVoicePromptLiveText}
+                />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
           <Route
             path="/drafts/:recipeId/refine"
-            element={isLoggedIn ? <DraftRefinePage /> : <Navigate to="/login" replace />}
+            element={
+              isLoggedIn ? (
+                <DraftRefinePage
+                  voicePromptRequest={draftRefineVoicePromptRequest}
+                  voicePromptLiveText={draftRefineVoicePromptLiveText}
+                />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
           />
           <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
           <Route
@@ -236,7 +461,22 @@ function App() {
         </footer>
       ) : null}
 
-      <AIAssistant />
+      <AIAssistant
+        currentPath={location.pathname}
+        homeRecipes={homeRecipes}
+        createDrafts={createRecipes}
+        onDeleteRecipe={handleDeleteRecipeViaVoice}
+        onRefineRecipe={handleRefineRecipeViaVoice}
+        onRefineDraft={handleRefineDraftViaVoice}
+        onSaveDraft={handleSaveDraftViaVoice}
+        onRefineRecipePrompt={handleRefineRecipePromptViaVoice}
+        onRefineRecipePromptLive={handleRefineRecipePromptLiveViaVoice}
+        onRefineDraftPrompt={handleRefineDraftPromptViaVoice}
+        onRefineDraftPromptLive={handleRefineDraftPromptLiveViaVoice}
+        onCreateVoicePrompt={handleCreatePromptViaVoice}
+        onCreateVoicePromptLive={handleCreatePromptLiveViaVoice}
+        onResetCreateView={handleResetCreateView}
+      />
     </div>
   )
 }

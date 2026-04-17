@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
@@ -81,7 +81,7 @@ function RecipeDetailSkeleton() {
   )
 }
 
-function DraftRefinePage() {
+function DraftRefinePage({ voicePromptRequest = null, voicePromptLiveText = '' }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { recipeId } = useParams()
@@ -92,6 +92,7 @@ function DraftRefinePage() {
   const [prompt, setPrompt] = useState('')
   const [isRefining, setIsRefining] = useState(false)
   const [refinedRecipe, setRefinedRecipe] = useState(null)
+  const lastVoicePromptRequestId = useRef('')
 
   const recipesEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -191,30 +192,25 @@ function DraftRefinePage() {
   }
 
   const handleBack = () => {
-    const currentRecipe = refinedRecipe ?? recipe
-    const baseRecipes = recipesSnapshot.length > 0 ? recipesSnapshot : currentRecipe ? [currentRecipe] : []
-
-    const nextRecipes = baseRecipes.some((item) => item.id === recipeId)
-      ? baseRecipes.map((item) => (item.id === recipeId ? { ...item, ...currentRecipe } : item))
-      : currentRecipe
-        ? [...baseRecipes, currentRecipe]
-        : baseRecipes
+    const draftRecipes = recipesSnapshot
+      .map((item) => (item.id === recipeId && refinedRecipe ? { ...item, ...refinedRecipe } : item))
+      .filter((item) => String(item?.status ?? '').toUpperCase() === 'DRAFT')
 
     navigate('/create', {
       state: {
-        recipes: nextRecipes,
+        showDrafts: true,
+        draftRecipes,
+        preferFreshDrafts: Boolean(refinedRecipe),
       },
     })
   }
 
-  const handleRefine = (event) => {
-    event.preventDefault()
-
-    const trimmedPrompt = prompt.trim()
+  const submitRefinePrompt = (rawPrompt) => {
+    const trimmedPrompt = String(rawPrompt ?? '').trim()
 
     if (!trimmedPrompt) {
       setErrorMessage('Please enter a refine prompt')
-      return
+      return false
     }
 
     setIsRefining(true)
@@ -244,7 +240,7 @@ function DraftRefinePage() {
             ),
           )
           setIsRefining(false)
-          return
+          return false
         }
 
         const nextRecipe = payload.data || payload
@@ -255,15 +251,55 @@ function DraftRefinePage() {
         )
         setPrompt('')
         setIsRefining(false)
+        return true
       })
       .catch(() => {
         setErrorMessage('We could not refine this recipe right now. Please try again in a moment.')
         setIsRefining(false)
+        return false
       })
       .finally(() => {
         setIsRefining(false)
       })
+
+    return true
   }
+
+  const handleRefine = (event) => {
+    event.preventDefault()
+    submitRefinePrompt(prompt)
+  }
+
+  useEffect(() => {
+    const requestId = String(voicePromptRequest?.id ?? '')
+    const requestText = String(voicePromptRequest?.text ?? '').trim()
+
+    if (!requestId || !requestText || isRefining) {
+      return
+    }
+
+    if (lastVoicePromptRequestId.current === requestId) {
+      return
+    }
+
+    lastVoicePromptRequestId.current = requestId
+    setPrompt(requestText)
+    submitRefinePrompt(requestText)
+  }, [voicePromptRequest, isRefining])
+
+  useEffect(() => {
+    if (isRefining) {
+      return
+    }
+
+    if (typeof voicePromptLiveText !== 'string') {
+      return
+    }
+
+    setPrompt(voicePromptLiveText)
+  }, [voicePromptLiveText, isRefining])
+
+  const activeRecipe = refinedRecipe ?? recipe
 
   const renderRecipeCard = (recipeData) => (
     <div className="recipe-results">
@@ -344,12 +380,10 @@ function DraftRefinePage() {
             <p className="create-loading-text">This may take a moment.</p>
           </div>
         ) : null}
-        {!isLoading && !isRefining && !errorMessage && recipe ? renderRecipeCard(recipe) : null}
+        {!isLoading && !isRefining && !errorMessage && activeRecipe ? renderRecipeCard(activeRecipe) : null}
         {errorMessage ? <p className="error-banner">{errorMessage}</p> : null}
       </div>
-
-
-      {refinedRecipe && !isRefining ? renderRecipeCard(refinedRecipe) : null}
+      {refinedRecipe && !isRefining ? <p className="success-banner">Recipe refined successfully.</p> : null}
 
       <form className="chat-composer" onSubmit={handleRefine} disabled={isRefining}>
         <label className="sr-only" htmlFor="refineDraftPrompt">

@@ -242,7 +242,7 @@ function setSearchParamsIfChanged(searchParams, setSearchParams, nextParams) {
   setSearchParams(nextParams, { replace: true })
 }
 
-function HomePage({ searchValue = '', onSearchValueChange }) {
+function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [recipes, setRecipes] = useState([])
   const [isLoading, setIsLoading] = useState(true)
@@ -593,6 +593,10 @@ function HomePage({ searchValue = '', onSearchValueChange }) {
       isActive = false
     }
   }, [filtersQueryString, recipesEndpoint])
+
+  useEffect(() => {
+    onRecipesChange?.(recipes)
+  }, [onRecipesChange, recipes])
 
   return (
     <section className="home-recipes-page">

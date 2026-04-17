@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
@@ -26,22 +26,165 @@ function formatList(items) {
   return items.join(', ')
 }
 
-function CreatePage() {
+function extractDraftList(payload) {
+  if (Array.isArray(payload)) {
+    return payload
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data
+  }
+
+  if (Array.isArray(payload?.data?.items)) {
+    return payload.data.items
+  }
+
+  return []
+}
+
+function keepDraftOrderById(nextDrafts, orderedDrafts) {
+  if (!Array.isArray(nextDrafts) || nextDrafts.length === 0) {
+    return []
+  }
+
+  if (!Array.isArray(orderedDrafts) || orderedDrafts.length === 0) {
+    return nextDrafts
+  }
+
+  const orderById = new Map()
+
+  orderedDrafts.forEach((item, index) => {
+    const id = String(item?.id ?? '')
+
+    if (!id || orderById.has(id)) {
+      return
+    }
+
+    orderById.set(id, index)
+  })
+
+  if (orderById.size === 0) {
+    return nextDrafts
+  }
+
+  const ordered = []
+  const unordered = []
+
+  nextDrafts.forEach((item) => {
+    const id = String(item?.id ?? '')
+
+    if (id && orderById.has(id)) {
+      ordered.push(item)
+      return
+    }
+
+    unordered.push(item)
+  })
+
+  ordered.sort((a, b) => {
+    const aIndex = orderById.get(String(a?.id ?? '')) ?? Number.MAX_SAFE_INTEGER
+    const bIndex = orderById.get(String(b?.id ?? '')) ?? Number.MAX_SAFE_INTEGER
+    return aIndex - bIndex
+  })
+
+  return [...ordered, ...unordered]
+}
+
+function DraftRecipeSkeletonList() {
+  return (
+    <div className="recipe-results recipe-results-loading" aria-hidden="true">
+      {Array.from({ length: 2 }).map((_, index) => (
+        <article className="recipe-card recipe-detail-skeleton" key={index}>
+          <div className="recipe-header">
+            <div>
+              <div className="skeleton-line skeleton-status" />
+              <div className="skeleton-line skeleton-title" />
+              <div className="skeleton-line skeleton-title skeleton-title-short" />
+            </div>
+          </div>
+
+          <div className="recipe-highlights recipe-highlights-skeleton">
+            <div className="recipe-box">
+              <div className="skeleton-line recipe-skeleton-label" />
+              <div className="skeleton-line recipe-skeleton-value" />
+              <div className="skeleton-line recipe-skeleton-meta" />
+            </div>
+            <div className="recipe-box">
+              <div className="skeleton-line recipe-skeleton-label" />
+              <div className="skeleton-line recipe-skeleton-value" />
+              <div className="skeleton-line recipe-skeleton-meta recipe-skeleton-meta-short" />
+            </div>
+            <div className="recipe-box">
+              <div className="skeleton-line recipe-skeleton-label" />
+              <div className="skeleton-line recipe-skeleton-value" />
+              <div className="skeleton-line recipe-skeleton-meta" />
+            </div>
+            <div className="recipe-box">
+              <div className="skeleton-line recipe-skeleton-label" />
+              <div className="skeleton-line recipe-skeleton-value" />
+              <div className="skeleton-line recipe-skeleton-meta" />
+            </div>
+          </div>
+
+          <div className="recipe-stats recipe-stats-skeleton">
+            <span className="skeleton-line recipe-skeleton-stat" />
+            <span className="skeleton-line recipe-skeleton-stat" />
+            <span className="skeleton-line recipe-skeleton-stat recipe-skeleton-stat-short" />
+          </div>
+
+          <div className="recipe-section recipe-section-skeleton">
+            <div className="skeleton-line recipe-skeleton-section-title" />
+            <div className="skeleton-line recipe-skeleton-list-line" />
+            <div className="skeleton-line recipe-skeleton-list-line" />
+            <div className="skeleton-line recipe-skeleton-list-line recipe-skeleton-list-line-short" />
+          </div>
+
+          <div className="recipe-section recipe-section-skeleton">
+            <div className="skeleton-line recipe-skeleton-section-title recipe-skeleton-section-title-wide" />
+            <div className="skeleton-line recipe-skeleton-list-line" />
+            <div className="skeleton-line recipe-skeleton-list-line" />
+            <div className="skeleton-line recipe-skeleton-list-line" />
+            <div className="skeleton-line recipe-skeleton-list-line recipe-skeleton-list-line-short" />
+          </div>
+
+          <div className="recipe-actions recipe-actions-skeleton">
+            <span className="skeleton-line recipe-skeleton-action" />
+            <span className="skeleton-line recipe-skeleton-action" />
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function CreatePage({
+  onRecipesChange,
+  voicePromptRequest = null,
+  voicePromptLiveText = '',
+  voiceSavedDraftId = '',
+}) {
   const location = useLocation()
   const navigate = useNavigate()
   const [prompt, setPrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isLoadingDrafts, setIsLoadingDrafts] = useState(false)
   const [publishingRecipeIds, setPublishingRecipeIds] = useState([])
   const [errorMessage, setErrorMessage] = useState('')
   const [recipes, setRecipes] = useState([])
+  const lastVoicePromptRequestId = useRef('')
+  const latestGenerateRequestId = useRef(0)
 
   useEffect(() => {
-    const returnedRecipes = location.state?.recipes
+    setPrompt('')
+    setErrorMessage('')
+    setRecipes([])
+    setPublishingRecipeIds([])
+    setIsLoadingDrafts(false)
+  }, [])
 
-    if (Array.isArray(returnedRecipes)) {
-      setRecipes(returnedRecipes)
-    }
-  }, [location.state])
+  useEffect(() => {
+    onRecipesChange?.(recipes)
+  }, [onRecipesChange, recipes])
 
   const recipesEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -53,19 +196,99 @@ function CreatePage() {
     return `${normalizedBaseUrl.replace(/\/$/, '')}/recipes`
   }, [])
 
-  const handleGenerate = async (event) => {
-    event.preventDefault()
+  const draftsEndpoint = useMemo(() => {
+    const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
 
-    const trimmedPrompt = prompt.trim()
+    if (!normalizedBaseUrl) {
+      return '/recipes/drafts'
+    }
+
+    return `${normalizedBaseUrl.replace(/\/$/, '')}/recipes/drafts`
+  }, [])
+
+  useEffect(() => {
+    if (!location.state?.showDrafts) {
+      return
+    }
+
+    let isActive = true
+    const incomingDraftRecipes = Array.isArray(location.state?.draftRecipes)
+      ? location.state.draftRecipes
+      : []
+    const preferFreshDrafts = Boolean(location.state?.preferFreshDrafts)
+    const draftOrderReference = incomingDraftRecipes.length > 0 ? incomingDraftRecipes : recipes
+
+    if (!preferFreshDrafts && incomingDraftRecipes.length > 0) {
+      setRecipes(incomingDraftRecipes)
+      setIsLoadingDrafts(false)
+    } else {
+      if (preferFreshDrafts) {
+        setRecipes([])
+      }
+      setIsLoadingDrafts(true)
+    }
+
+    const loadDrafts = async () => {
+      setErrorMessage('')
+
+      try {
+        const response = await fetch(draftsEndpoint, {
+          method: 'GET',
+          credentials: 'include',
+        })
+
+        const payload = await response.json().catch(() => null)
+
+        if (!isActive) {
+          return
+        }
+
+        if (!response.ok || payload?.success === false) {
+          setErrorMessage(
+            toUserSafeErrorMessage(
+              payload?.message ?? payload?.error?.message,
+              'We could not load drafts right now. Please try again in a moment.',
+            ),
+          )
+          return
+        }
+
+        setRecipes(keepDraftOrderById(extractDraftList(payload), draftOrderReference))
+      } catch {
+        if (!isActive) {
+          return
+        }
+
+        setErrorMessage('We could not load drafts right now. Please try again in a moment.')
+      } finally {
+        if (isActive) {
+          setIsLoadingDrafts(false)
+        }
+      }
+    }
+
+    loadDrafts()
+
+    return () => {
+      isActive = false
+    }
+  }, [location.state, draftsEndpoint])
+
+  const submitGeneratePrompt = async (rawPrompt) => {
+    const trimmedPrompt = String(rawPrompt ?? '').trim()
 
     if (!trimmedPrompt) {
       setErrorMessage('Please enter a prompt')
-      return
+      return false
     }
+
+    const requestId = latestGenerateRequestId.current + 1
+    latestGenerateRequestId.current = requestId
 
     setIsGenerating(true)
     setErrorMessage('')
     setPrompt('')
+    setRecipes([])
 
     try {
       const response = await fetch(recipesEndpoint, {
@@ -82,33 +305,99 @@ function CreatePage() {
       console.log('Recipe generation response:', { status: response.status, payload, payloadType: typeof payload })
 
       if (!response.ok || payload?.success === false) {
+        if (latestGenerateRequestId.current !== requestId) {
+          return false
+        }
+
         setErrorMessage(
           toUserSafeErrorMessage(
             payload?.message ?? payload?.error?.message,
             'We could not generate recipes right now. Please try again in a moment.',
           ),
         )
-        return
+        return false
       }
 
       if (!Array.isArray(payload?.data)) {
+        if (latestGenerateRequestId.current !== requestId) {
+          return false
+        }
+
         console.error('Unexpected generation response:', {
           hasData: !!payload?.data,
           dataType: typeof payload?.data,
           payload,
         })
         setErrorMessage('We could not generate recipes right now. Please try again in a moment.')
-        return
+        return false
+      }
+
+      if (latestGenerateRequestId.current !== requestId) {
+        return false
       }
 
       setRecipes(payload.data)
+      return true
     } catch (error) {
+      if (latestGenerateRequestId.current !== requestId) {
+        return false
+      }
+
       console.error('Recipe generation error:', error)
       setErrorMessage('We could not generate recipes right now. Please try again in a moment.')
+      return false
     } finally {
-      setIsGenerating(false)
+      if (latestGenerateRequestId.current === requestId) {
+        setIsGenerating(false)
+      }
     }
   }
+
+  const handleGenerate = async (event) => {
+    event.preventDefault()
+    await submitGeneratePrompt(prompt)
+  }
+
+  useEffect(() => {
+    const requestId = String(voicePromptRequest?.id ?? '')
+    const requestText = String(voicePromptRequest?.text ?? '').trim()
+
+    if (!requestId || !requestText || isGenerating) {
+      return
+    }
+
+    if (lastVoicePromptRequestId.current === requestId) {
+      return
+    }
+
+    lastVoicePromptRequestId.current = requestId
+    setPrompt(requestText)
+    setRecipes([])
+    void submitGeneratePrompt(requestText)
+  }, [voicePromptRequest, isGenerating])
+
+  useEffect(() => {
+    if (isGenerating) {
+      return
+    }
+
+    if (typeof voicePromptLiveText !== 'string') {
+      return
+    }
+
+    setPrompt(voicePromptLiveText)
+  }, [voicePromptLiveText, isGenerating])
+
+  useEffect(() => {
+    const savedId = String(voiceSavedDraftId ?? '').trim()
+
+    if (!savedId) {
+      return
+    }
+
+    setRecipes((previous) => previous.filter((recipe) => String(recipe?.id ?? '') !== savedId))
+    setPublishingRecipeIds((previous) => previous.filter((id) => String(id) !== savedId))
+  }, [voiceSavedDraftId])
 
   const handlePromptKeyDown = (event) => {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {
@@ -213,6 +502,8 @@ function CreatePage() {
             <p className="create-loading-title">Generating recipe drafts</p>
             <p className="create-loading-text">This may take a moment.</p>
           </div>
+        ) : isLoadingDrafts ? (
+          <DraftRecipeSkeletonList />
         ) : recipes.length > 0 ? (
           <div className="recipe-results">
             {recipes.map((recipe) => {

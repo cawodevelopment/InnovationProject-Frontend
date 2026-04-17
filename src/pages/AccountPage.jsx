@@ -127,10 +127,6 @@ function buildTagPayloadCandidates(idKey, option) {
 function AccountPage() {
   const navigate = useNavigate()
   const payloadPreferenceRef = useRef({})
-  const pendingDietarySelectionRef = useRef(null)
-  const pendingAllergenSelectionRef = useRef(null)
-  const pendingDietaryRemovalRef = useRef(null)
-  const pendingAllergenRemovalRef = useRef(null)
   const [profile, setProfile] = useState(null)
   const [profileForm, setProfileForm] = useState({ firstname: '', lastname: '' })
   const [isLoading, setIsLoading] = useState(true)
@@ -145,14 +141,10 @@ function AccountPage() {
   const [availableAllergenOptions, setAvailableAllergenOptions] = useState([])
   const [selectedDietary, setSelectedDietary] = useState([])
   const [selectedAllergens, setSelectedAllergens] = useState([])
-  const [pendingDietarySelection, setPendingDietarySelection] = useState(null)
-  const [pendingAllergenSelection, setPendingAllergenSelection] = useState(null)
   const [dietaryQuery, setDietaryQuery] = useState('')
   const [allergenQuery, setAllergenQuery] = useState('')
   const [dietaryError, setDietaryError] = useState('')
   const [allergenError, setAllergenError] = useState('')
-  const [isUpdatingDietary, setIsUpdatingDietary] = useState(false)
-  const [isUpdatingAllergens, setIsUpdatingAllergens] = useState(false)
 
   const meEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -327,44 +319,20 @@ function AccountPage() {
 
   const remainingDietaryOptions = availableDietaryOptions.filter(
     (option) => {
-      const isPendingOption = pendingDietarySelection && sameOption(pendingDietarySelection, option)
-
-      return (
-        !isPendingOption &&
-        !selectedDietary.some((selected) => sameOption(selected, option)) &&
-        !normalizeUserTagList(profile?.dietaryPreferences ?? []).some((selected) =>
-          sameOption(selected, option),
-        )
-      )
+      return !selectedDietary.some((selected) => sameOption(selected, option))
     },
   )
 
   const remainingAllergenOptions = availableAllergenOptions.filter(
     (option) => {
-      const isPendingOption = pendingAllergenSelection && sameOption(pendingAllergenSelection, option)
-
-      return (
-        !isPendingOption &&
-        !selectedAllergens.some((selected) => sameOption(selected, option)) &&
-        !normalizeUserTagList(profile?.allergens ?? []).some((selected) => sameOption(selected, option))
-      )
+      return !selectedAllergens.some((selected) => sameOption(selected, option))
     },
   )
 
   const filteredDietaryOptions = matchByRegex(remainingDietaryOptions, dietaryQuery)
   const filteredAllergenOptions = matchByRegex(remainingAllergenOptions, allergenQuery)
 
-  const updateTagSelection = async ({
-    endpoint,
-    idKey,
-    option,
-    method,
-    onSuccess,
-    onError,
-    setLoading,
-  }) => {
-    setLoading(true)
-
+  const updateTagSelection = async ({ endpoint, idKey, option, method }) => {
     try {
       const payloadCandidates = buildTagPayloadCandidates(idKey, option)
       const preferenceKey = `${method}:${endpoint}:${idKey}`
@@ -391,14 +359,13 @@ function AccountPage() {
 
         if (response.ok && payload?.success !== false && payload?.status !== 'error') {
           payloadPreferenceRef.current[preferenceKey] = candidate.key
-          onSuccess()
-          return
+          return { success: true }
         }
 
         if (response.status === 401 || response.status === 403) {
           clearAuthState()
           navigate('/login', { replace: true })
-          return
+          return { success: false, unauthorized: true }
         }
 
         lastErrorMessage = toUserSafeErrorMessage(
@@ -412,134 +379,43 @@ function AccountPage() {
         }
       }
 
-      onError(lastErrorMessage)
+      return { success: false, message: lastErrorMessage }
     } catch {
-      onError('We could not update your preferences right now. Please try again in a moment.')
-    } finally {
-      setLoading(false)
+      return {
+        success: false,
+        message: 'We could not update your preferences right now. Please try again in a moment.',
+      }
     }
   }
 
-  const handleAddDietary = async (option) => {
-    if (pendingDietarySelectionRef.current && sameOption(pendingDietarySelectionRef.current, option)) {
-      return
-    }
-
+  const handleAddDietary = (option) => {
     if (selectedDietary.some((item) => sameOption(item, option))) {
       return
     }
 
     setDietaryError('')
-    pendingDietarySelectionRef.current = option
-    setPendingDietarySelection(option)
     setSelectedDietary((previous) => [...previous, option])
     setDietaryQuery('')
-
-    await updateTagSelection({
-      endpoint: userDietaryEndpoint,
-      idKey: 'dietaryPreferenceId',
-      option,
-      method: 'POST',
-      setLoading: setIsUpdatingDietary,
-      onSuccess: () => {
-        pendingDietarySelectionRef.current = null
-        setPendingDietarySelection(null)
-      },
-      onError: (message) => {
-        pendingDietarySelectionRef.current = null
-        setPendingDietarySelection(null)
-        setSelectedDietary((previous) => previous.filter((item) => !sameOption(item, option)))
-        setDietaryError(message)
-      },
-    })
   }
 
-  const handleRemoveDietary = async (option) => {
-    if (pendingDietaryRemovalRef.current && sameOption(pendingDietaryRemovalRef.current, option)) {
-      return
-    }
-
+  const handleRemoveDietary = (option) => {
     setDietaryError('')
-    pendingDietaryRemovalRef.current = option
     setSelectedDietary((previous) => previous.filter((item) => !sameOption(item, option)))
-
-    await updateTagSelection({
-      endpoint: userDietaryEndpoint,
-      idKey: 'dietaryPreferenceId',
-      option,
-      method: 'DELETE',
-      setLoading: setIsUpdatingDietary,
-      onSuccess: () => {
-        pendingDietaryRemovalRef.current = null
-        setSelectedDietary((previous) => previous.filter((item) => !sameOption(item, option)))
-      },
-      onError: (message) => {
-        pendingDietaryRemovalRef.current = null
-        setSelectedDietary((previous) => [...previous, option])
-        setDietaryError(message)
-      },
-    })
   }
 
-  const handleAddAllergen = async (option) => {
-    if (pendingAllergenSelectionRef.current && sameOption(pendingAllergenSelectionRef.current, option)) {
-      return
-    }
-
+  const handleAddAllergen = (option) => {
     if (selectedAllergens.some((item) => sameOption(item, option))) {
       return
     }
 
     setAllergenError('')
-    pendingAllergenSelectionRef.current = option
-    setPendingAllergenSelection(option)
     setSelectedAllergens((previous) => [...previous, option])
     setAllergenQuery('')
-
-    await updateTagSelection({
-      endpoint: userAllergensEndpoint,
-      idKey: 'allergenId',
-      option,
-      method: 'POST',
-      setLoading: setIsUpdatingAllergens,
-      onSuccess: () => {
-        pendingAllergenSelectionRef.current = null
-        setPendingAllergenSelection(null)
-      },
-      onError: (message) => {
-        pendingAllergenSelectionRef.current = null
-        setPendingAllergenSelection(null)
-        setSelectedAllergens((previous) => previous.filter((item) => !sameOption(item, option)))
-        setAllergenError(message)
-      },
-    })
   }
 
-  const handleRemoveAllergen = async (option) => {
-    if (pendingAllergenRemovalRef.current && sameOption(pendingAllergenRemovalRef.current, option)) {
-      return
-    }
-
+  const handleRemoveAllergen = (option) => {
     setAllergenError('')
-    pendingAllergenRemovalRef.current = option
     setSelectedAllergens((previous) => previous.filter((item) => !sameOption(item, option)))
-
-    await updateTagSelection({
-      endpoint: userAllergensEndpoint,
-      idKey: 'allergenId',
-      option,
-      method: 'DELETE',
-      setLoading: setIsUpdatingAllergens,
-      onSuccess: () => {
-        pendingAllergenRemovalRef.current = null
-        setSelectedAllergens((previous) => previous.filter((item) => !sameOption(item, option)))
-      },
-      onError: (message) => {
-        pendingAllergenRemovalRef.current = null
-        setSelectedAllergens((previous) => [...previous, option])
-        setAllergenError(message)
-      },
-    })
   }
 
   const handleProfileChange = (event) => {
@@ -560,8 +436,25 @@ function AccountPage() {
     const nextLastName = profileForm.lastname.trim()
     const currentFirstName = (profile?.firstname ?? '').trim()
     const currentLastName = (profile?.lastname ?? '').trim()
+    const currentDietary = normalizeUserTagList(profile?.dietaryPreferences ?? [])
+    const currentAllergens = normalizeUserTagList(profile?.allergens ?? [])
+    const dietaryToAdd = selectedDietary.filter(
+      (option) => !currentDietary.some((currentOption) => sameOption(currentOption, option)),
+    )
+    const dietaryToRemove = currentDietary.filter(
+      (option) => !selectedDietary.some((selectedOption) => sameOption(selectedOption, option)),
+    )
+    const allergensToAdd = selectedAllergens.filter(
+      (option) => !currentAllergens.some((currentOption) => sameOption(currentOption, option)),
+    )
+    const allergensToRemove = currentAllergens.filter(
+      (option) => !selectedAllergens.some((selectedOption) => sameOption(selectedOption, option)),
+    )
+    const hasNameChanges = nextFirstName !== currentFirstName || nextLastName !== currentLastName
+    const hasDietaryChanges = dietaryToAdd.length > 0 || dietaryToRemove.length > 0
+    const hasAllergenChanges = allergensToAdd.length > 0 || allergensToRemove.length > 0
 
-    if (nextFirstName === currentFirstName && nextLastName === currentLastName) {
+    if (!hasNameChanges && !hasDietaryChanges && !hasAllergenChanges) {
       navigate('/', { replace: true })
       return
     }
@@ -578,42 +471,125 @@ function AccountPage() {
 
     setIsSaving(true)
     setSaveError('')
+    setDietaryError('')
+    setAllergenError('')
 
     try {
-      const response = await fetch(updateEndpoint, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          firstname: nextFirstName,
-          lastname: nextLastName,
-        }),
-      })
+      let nextProfile = profile
 
-      const payload = await response.json().catch(() => null)
+      if (hasNameChanges) {
+        const response = await fetch(updateEndpoint, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            firstname: nextFirstName,
+            lastname: nextLastName,
+          }),
+        })
 
-      if (!response.ok || payload?.success === false || payload?.status === 'error') {
-        if (response.status === 401 || response.status === 403) {
-          navigate('/login', { replace: true })
+        const payload = await response.json().catch(() => null)
+
+        if (!response.ok || payload?.success === false || payload?.status === 'error') {
+          if (response.status === 401 || response.status === 403) {
+            navigate('/login', { replace: true })
+            return
+          }
+
+          setSaveError(
+            toUserSafeErrorMessage(
+              payload?.message ?? payload?.error?.message,
+              'We could not update your account right now. Please try again in a moment.',
+            ),
+          )
           return
         }
 
-        setSaveError(
-          toUserSafeErrorMessage(
-            payload?.message ?? payload?.error?.message,
-            'We could not update your account right now. Please try again in a moment.',
-          ),
-        )
-        setIsSaving(false)
-        return
+        nextProfile = payload?.data ?? {
+          ...profile,
+          firstname: nextFirstName,
+          lastname: nextLastName,
+        }
       }
 
-      const nextProfile = payload?.data ?? {
-        ...profile,
-        firstname: nextFirstName,
-        lastname: nextLastName,
+      for (const option of dietaryToAdd) {
+        const result = await updateTagSelection({
+          endpoint: userDietaryEndpoint,
+          idKey: 'dietaryPreferenceId',
+          option,
+          method: 'POST',
+        })
+
+        if (!result.success) {
+          if (result.unauthorized) {
+            return
+          }
+
+          setDietaryError(result.message)
+          return
+        }
+      }
+
+      for (const option of dietaryToRemove) {
+        const result = await updateTagSelection({
+          endpoint: userDietaryEndpoint,
+          idKey: 'dietaryPreferenceId',
+          option,
+          method: 'DELETE',
+        })
+
+        if (!result.success) {
+          if (result.unauthorized) {
+            return
+          }
+
+          setDietaryError(result.message)
+          return
+        }
+      }
+
+      for (const option of allergensToAdd) {
+        const result = await updateTagSelection({
+          endpoint: userAllergensEndpoint,
+          idKey: 'allergenId',
+          option,
+          method: 'POST',
+        })
+
+        if (!result.success) {
+          if (result.unauthorized) {
+            return
+          }
+
+          setAllergenError(result.message)
+          return
+        }
+      }
+
+      for (const option of allergensToRemove) {
+        const result = await updateTagSelection({
+          endpoint: userAllergensEndpoint,
+          idKey: 'allergenId',
+          option,
+          method: 'DELETE',
+        })
+
+        if (!result.success) {
+          if (result.unauthorized) {
+            return
+          }
+
+          setAllergenError(result.message)
+          return
+        }
+      }
+
+      nextProfile = {
+        ...(nextProfile ?? {}),
+        dietaryPreferences: selectedDietary,
+        allergens: selectedAllergens,
       }
 
       setProfile(nextProfile)
@@ -787,10 +763,10 @@ function AccountPage() {
                     value={dietaryQuery}
                     onChange={(event) => setDietaryQuery(event.target.value)}
                     placeholder="Search dietary preferences"
-                      disabled={isUpdatingDietary || Boolean(pendingDietarySelection)}
+                    disabled={isSaving}
                   />
 
-                  {!pendingDietarySelection && dietaryQuery.trim() ? (
+                  {dietaryQuery.trim() ? (
                     <ul className="tag-dropdown">
                       {filteredDietaryOptions.length > 0 ? (
                         filteredDietaryOptions.map((option) => (
@@ -820,7 +796,7 @@ function AccountPage() {
                         className="tag-remove"
                         aria-label={`Remove ${item.label}`}
                         onClick={() => handleRemoveDietary(item)}
-                          disabled={isUpdatingDietary}
+                        disabled={isSaving}
                       >
                         x
                       </button>
@@ -839,10 +815,10 @@ function AccountPage() {
                     value={allergenQuery}
                     onChange={(event) => setAllergenQuery(event.target.value)}
                     placeholder="Search allergens"
-                      disabled={isUpdatingAllergens || Boolean(pendingAllergenSelection)}
+                    disabled={isSaving}
                   />
 
-                  {!pendingAllergenSelection && allergenQuery.trim() ? (
+                  {allergenQuery.trim() ? (
                     <ul className="tag-dropdown">
                       {filteredAllergenOptions.length > 0 ? (
                         filteredAllergenOptions.map((option) => (
@@ -872,7 +848,7 @@ function AccountPage() {
                         className="tag-remove"
                         aria-label={`Remove ${item.label}`}
                         onClick={() => handleRemoveAllergen(item)}
-                          disabled={isUpdatingAllergens}
+                        disabled={isSaving}
                       >
                         x
                       </button>
