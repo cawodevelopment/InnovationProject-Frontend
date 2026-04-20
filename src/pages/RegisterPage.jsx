@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { toUserSafeErrorMessage } from '../utils/userSafeError'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 const initialForm = {
   firstname: '',
@@ -8,22 +7,6 @@ const initialForm = {
   email: '',
   password: '',
   confirmPassword: '',
-}
-
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
-
-function normalizeBaseUrl(url) {
-  const trimmed = url.trim()
-
-  if (!trimmed) {
-    return ''
-  }
-
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed
-  }
-
-  return `http://${trimmed}`
 }
 
 function validateForm(values) {
@@ -59,23 +42,12 @@ function validateForm(values) {
 }
 
 function RegisterPage() {
-  const navigate = useNavigate()
   const [formData, setFormData] = useState(initialForm)
   const [errors, setErrors] = useState({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [apiResult, setApiResult] = useState(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-
-  const endpointPreview = useMemo(() => {
-    const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
-
-    if (!normalizedBaseUrl) {
-      return '/auth/register'
-    }
-
-    return `${normalizedBaseUrl.replace(/\/$/, '')}/auth/register`
-  }, [])
 
   const handleChange = (event) => {
     const { name, value } = event.target
@@ -91,7 +63,7 @@ function RegisterPage() {
     }))
   }
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = (event) => {
     event.preventDefault()
 
     const nextErrors = validateForm(formData)
@@ -104,45 +76,11 @@ function RegisterPage() {
 
     setIsSubmitting(true)
 
-    try {
-      const response = await fetch(endpointPreview, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          firstname: formData.firstname.trim(),
-          lastname: formData.lastname.trim(),
-          email: formData.email.trim(),
-          password: formData.password,
-        }),
-      })
-
-      const payload = await response.json()
-
-      if (!response.ok || payload?.success === false) {
-        setApiResult({
-          type: 'error',
-          message: toUserSafeErrorMessage(payload?.error?.message, 'Registration failed'),
-        })
-        return
-      }
-
-      setApiResult({
-        type: 'success',
-        message: 'User registered successfully',
-      })
-
-      setFormData(initialForm)
-      navigate('/login')
-    } catch {
-      setApiResult({
-        type: 'error',
-        message: 'Could not connect to the backend. Check your API base URL.',
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
+    setApiResult({
+      type: 'error',
+      message: 'Register is disabled for this demo.',
+    })
+    setIsSubmitting(false)
   }
 
   return (

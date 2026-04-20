@@ -11,6 +11,16 @@ const REFINE_PROMPT_READY_DELAY = 1000;
 const REFINE_POST_SPEECH_TIMEOUT = 2400;
 const TYPE_SPEED = 45;
 const WAKE_WORD = 'okay clove';
+const WAKE_WORD_VARIANTS = [
+  'okay clove',
+  'ok clove',
+  'okay glove',
+  'ok glove',
+  'hey clove',
+  'a clove',
+];
+const WAKE_WORD_MIN_SIMILARITY = 0.74;
+const RECOGNITION_LANGUAGE = 'en-US';
 const WAKE_WORD_RESPONSES = [
   'What can I help you with?',
   'I am listening.',
@@ -24,14 +34,22 @@ const NAVIGATION_INTENTS = [
     route: '/',
     response: 'Opening home.',
     phrases: [
+      'recipe',
       'recipes',
       'home',
+      'homepage',
       'show recipes',
+      'show me recipes',
       'go home',
+      'going home',
       'take me home',
       'open home',
+      'open homepage',
+      'opened home',
       'go to home',
+      'go to the home page',
       'open recipes',
+      'show recipe list',
       'show home',
     ],
   },
@@ -40,14 +58,24 @@ const NAVIGATION_INTENTS = [
     response: 'Opening Create page.',
     phrases: [
       'create',
+      'created',
       'create recipe',
       'create recipes',
+      'create a recipe',
+      'create some recipes',
       'open create',
+      'open create page',
+      'opened create',
       'go to create',
+      'go to create page',
       'take me to create',
       'new recipe',
+      'make recipe',
+      'make a recipe',
       'generate recipe',
       'generate recipes',
+      'generated recipe',
+      'generated recipes',
     ],
   },
   {
@@ -56,12 +84,15 @@ const NAVIGATION_INTENTS = [
     phrases: [
       'account',
       'open account',
+      'opened account',
       'go to account',
+      'go to my account',
       'take me to account',
       'show account',
       'my account',
       'profile',
       'open profile',
+      'show profile',
     ],
   },
   {
@@ -70,9 +101,12 @@ const NAVIGATION_INTENTS = [
     phrases: [
       'privacy',
       'open privacy',
+      'opened privacy',
       'privacy policy',
       'show privacy policy',
+      'open the privacy policy',
       'go to privacy',
+      'go to privacy policy',
       'open privacy policy',
     ],
   },
@@ -84,6 +118,21 @@ const normalizeCommand = (text) =>
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const hasWholePhrase = (command, phrase) => {
+  const normalizedPhrase = normalizeCommand(phrase);
+
+  if (!command || !normalizedPhrase) {
+    return false;
+  }
+
+  const escapedPhrase = escapeRegExp(normalizedPhrase).replace(/\s+/g, '\\s+');
+  const matcher = new RegExp(`(?:^|\\b)${escapedPhrase}(?:\\b|$)`);
+  return matcher.test(command);
+};
+
 const getNavigationIntent = (rawText) => {
   const command = normalizeCommand(rawText);
 
@@ -91,11 +140,27 @@ const getNavigationIntent = (rawText) => {
     return null;
   }
 
-  return (
-    NAVIGATION_INTENTS.find((intent) =>
-      intent.phrases.some((phrase) => command.includes(phrase))
-    ) ?? null
-  );
+  const matches = NAVIGATION_INTENTS
+    .map((intent) => {
+      const matchedPhrase = intent.phrases
+        .map((phrase) => normalizeCommand(phrase))
+        .filter((phrase) => hasWholePhrase(command, phrase))
+        .sort((left, right) => right.length - left.length)[0];
+
+      if (!matchedPhrase) {
+        return null;
+      }
+
+      const startsWithPhrase = command.startsWith(matchedPhrase) ? 1 : 0;
+      return {
+        intent,
+        score: matchedPhrase.length * 10 + startsWithPhrase,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score);
+
+  return matches[0]?.intent ?? null;
 };
 
 const getRecipeId = (recipe) => {
@@ -182,11 +247,109 @@ const getTokenOverlapScore = (left, right) => {
   return sharedCount / Math.max(leftTokens.size, rightTokens.size);
 };
 
+const getWakeWordMatch = (rawText) => {
+  const normalizedText = normalizeCommand(rawText);
+
+  if (!normalizedText) {
+    return false;
+  }
+
+  if (WAKE_WORD_VARIANTS.some((variant) => hasWholePhrase(normalizedText, variant))) {
+    return true;
+  }
+
+  const textTokens = normalizedText.split(' ').filter(Boolean);
+
+  for (const variant of WAKE_WORD_VARIANTS) {
+    const normalizedVariant = normalizeCommand(variant);
+    const variantTokens = normalizedVariant.split(' ').filter(Boolean);
+
+    if (!variantTokens.length || textTokens.length < variantTokens.length) {
+      continue;
+    }
+
+    for (let index = 0; index <= textTokens.length - variantTokens.length; index += 1) {
+      const windowText = textTokens.slice(index, index + variantTokens.length).join(' ');
+      const score = getStringSimilarity(windowText, normalizedVariant);
+
+      if (score >= WAKE_WORD_MIN_SIMILARITY) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
+const formatIntentList = (values) => {
+  if (values.length <= 1) {
+    return values[0] ?? '';
+  }
+
+  if (values.length === 2) {
+    return `${values[0]} or ${values[1]}`;
+  }
+
+  return `${values.slice(0, -1).join(', ')}, or ${values[values.length - 1]}`;
+};
+
+const getClarificationPrompt = (normalizedCommand) => {
+  if (!normalizedCommand) {
+    return '';
+  }
+
+  const guesses = [];
+  const addGuess = (value) => {
+    if (value && !guesses.includes(value)) {
+      guesses.push(value);
+    }
+  };
+
+  if (/\b(open|show|go|take me)\b/.test(normalizedCommand)) {
+    if (/\b(home|homepage|recipes|recipe)\b/.test(normalizedCommand)) {
+      addGuess('open Home');
+    }
+    if (/\b(create|make|generate|generated|created)\b/.test(normalizedCommand)) {
+      addGuess('open Create');
+    }
+    if (/\b(account|profile)\b/.test(normalizedCommand)) {
+      addGuess('open Account');
+    }
+    if (/\b(privacy|policy)\b/.test(normalizedCommand)) {
+      addGuess('open Privacy Policy');
+    }
+  }
+
+  if (/\b(refine|refined|refining)\b|\bre\s+fine\b/.test(normalizedCommand)) {
+    addGuess('refine recipe');
+  }
+
+  if (/\b(delete|deleted|remove|removed|discard|erase|trash)\b/.test(normalizedCommand)) {
+    addGuess('delete recipe');
+  }
+
+  if (!guesses.length) {
+    return '';
+  }
+
+  if (guesses.length === 1) {
+    return `I heard "${normalizedCommand}". Did you mean to ${guesses[0]}?`;
+  }
+
+  return `I heard "${normalizedCommand}". Did you mean to ${formatIntentList(guesses)}?`;
+};
+
 const isDeleteCommand = (normalizedCommand) => {
   const deletePatterns = [
     /^delete\b/,
+    /^deleted\b/,
+    /^removing\b/,
     /\bdelete\s+(this\s+)?recipe\b/,
+    /\bdeleted\s+(this\s+)?recipe\b/,
     /\bremove\s+(this\s+)?recipe\b/,
+    /\bremoved\s+(this\s+)?recipe\b/,
+    /\berase\s+(this\s+)?recipe\b/,
+    /\btrash\s+(this\s+)?recipe\b/,
     /\bdiscard\b/,
   ];
 
@@ -197,14 +360,21 @@ const isRefineCommand = (normalizedCommand) => {
   const refinePatterns = [
     /^refine\b/,
     /^refined\b/,
+    /^refining\b/,
+    /^re\s+fine\b/,
     /\brefine\s+recipe\b/,
     /\brefined\s+recipe\b/,
+    /\brefining\s+recipe\b/,
     /\brefine\s+(this\s+)?recipe\b/,
     /\brefined\s+(this\s+)?recipe\b/,
+    /\brefining\s+(this\s+)?recipe\b/,
     /\bclick\s+(the\s+)?refine\b/,
     /\bclick\s+(the\s+)?refined\b/,
+    /\bopen\s+(the\s+)?refine\b/,
     /\bopen\s+refine\b/,
     /\bopen\s+refined\b/,
+    /\bgo\s+to\s+refine\b/,
+    /\bgo\s+to\s+refine\s+page\b/,
     /\brefine\s+it\b/,
     /\brefined\s+it\b/,
   ];
@@ -216,10 +386,18 @@ const isRefinePromptStartCommand = (normalizedCommand) => {
   const startPatterns = [
     /^refine\b/,
     /^refined\b/,
+    /^refining\b/,
+    /^re\s+fine\b/,
     /\brefine\s+draft\b/,
+    /\brefined\s+draft\b/,
+    /\brefining\s+draft\b/,
     /\brefine\s+recipe\b/,
+    /\brefined\s+recipe\b/,
+    /\brefining\s+recipe\b/,
     /\brefine\s+(this\s+)?draft\b/,
+    /\brefined\s+(this\s+)?draft\b/,
     /\brefine\s+(this\s+)?recipe\b/,
+    /\brefined\s+(this\s+)?recipe\b/,
   ];
 
   return startPatterns.some((pattern) => pattern.test(normalizedCommand));
@@ -228,34 +406,68 @@ const isRefinePromptStartCommand = (normalizedCommand) => {
 const isBackToRecipeCommand = (normalizedCommand) => {
   const backPatterns = [
     /^go\s+back$/,
+    /^going\s+back$/,
+    /^went\s+back$/,
     /^back$/,
     /\bback\s+to\s+recipe\b/,
     /\bgo\s+back\s+to\s+recipe\b/,
+    /\bgoing\s+back\s+to\s+recipe\b/,
+    /\bwent\s+back\s+to\s+recipe\b/,
     /\breturn\s+to\s+recipe\b/,
+    /\breturn\s+back\s+to\s+recipe\b/,
     /\bview\s+recipe\b/,
     /\bshow\s+recipe\b/,
+    /\brecipe\s+details\b/,
   ];
 
   return backPatterns.some((pattern) => pattern.test(normalizedCommand));
 };
 
 const extractRecipeQuery = (normalizedCommand) => {
+  const blockedQueries = new Set([
+    'home',
+    'homepage',
+    'recipes',
+    'recipe',
+    'create',
+    'create page',
+    'account',
+    'my account',
+    'profile',
+    'privacy',
+    'privacy policy',
+  ]);
+
   const patterns = [
     /^open\s+recipe\s+named\s+(.+)$/,
+    /^opened\s+recipe\s+named\s+(.+)$/,
     /^open\s+recipe\s+called\s+(.+)$/,
+    /^opened\s+recipe\s+called\s+(.+)$/,
     /^open\s+recipe\s+(.+)$/,
+    /^opened\s+recipe\s+(.+)$/,
     /^show\s+recipe\s+named\s+(.+)$/,
+    /^showed\s+recipe\s+named\s+(.+)$/,
     /^show\s+recipe\s+called\s+(.+)$/,
+    /^showed\s+recipe\s+called\s+(.+)$/,
     /^show\s+recipe\s+(.+)$/,
+    /^showed\s+recipe\s+(.+)$/,
     /^open\s+(.+)$/,
+    /^opened\s+(.+)$/,
     /^show\s+(.+)$/,
+    /^showed\s+(.+)$/,
   ];
 
   for (const pattern of patterns) {
     const match = normalizedCommand.match(pattern);
 
     if (match?.[1]) {
-      return match[1].trim();
+      const query = match[1].trim();
+
+      if (blockedQueries.has(query)) {
+        return '';
+      }
+
+      return query;
     }
   }
 
@@ -266,12 +478,16 @@ const extractDraftQuery = (normalizedCommand) => {
   const patterns = [
     /^refine\s+draft\s+named\s+(.+)$/,
     /^refined\s+draft\s+named\s+(.+)$/,
+    /^refining\s+draft\s+named\s+(.+)$/,
     /^refine\s+draft\s+called\s+(.+)$/,
     /^refined\s+draft\s+called\s+(.+)$/,
+    /^refining\s+draft\s+called\s+(.+)$/,
     /^refine\s+draft\s+(.+)$/,
     /^refined\s+draft\s+(.+)$/,
+    /^refining\s+draft\s+(.+)$/,
     /^refine\s+(.+)$/,
     /^refined\s+(.+)$/,
+    /^refining\s+(.+)$/,
   ];
 
   for (const pattern of patterns) {
@@ -287,13 +503,15 @@ const extractDraftQuery = (normalizedCommand) => {
 
 const extractSaveDraftQuery = (normalizedCommand) => {
   const patterns = [
-    /^save\s+(.+)$/,
     /^save\s+draft\s+named\s+(.+)$/,
     /^saved\s+draft\s+named\s+(.+)$/,
     /^save\s+draft\s+called\s+(.+)$/,
     /^saved\s+draft\s+called\s+(.+)$/,
     /^save\s+draft\s+(.+)$/,
     /^saved\s+draft\s+(.+)$/,
+    /^saving\s+draft\s+(.+)$/,
+    /^save\s+(.+)$/,
+    /^saved\s+(.+)$/,
   ];
 
   for (const pattern of patterns) {
@@ -311,8 +529,14 @@ const extractCreatePromptQuery = (normalizedCommand) => {
   const patterns = [
     /^create\s+recipe\s+(.+)$/,
     /^create\s+recipes\s+(.+)$/,
+    /^created\s+recipe\s+(.+)$/,
+    /^created\s+recipes\s+(.+)$/,
     /^generate\s+recipe\s+(.+)$/,
     /^generate\s+recipes\s+(.+)$/,
+    /^generated\s+recipe\s+(.+)$/,
+    /^generated\s+recipes\s+(.+)$/,
+    /^make\s+recipe\s+(.+)$/,
+    /^make\s+a\s+recipe\s+(.+)$/,
   ];
 
   for (const pattern of patterns) {
@@ -705,6 +929,13 @@ const AIComponent = ({
       return;
     }
 
+    const clarificationPrompt = getClarificationPrompt(normalizedCmd);
+
+    if (clarificationPrompt) {
+      speakResponse(clarificationPrompt);
+      return;
+    }
+
     speakResponse(
       currentPath === '/'
         ? 'Try saying open recipe plus the recipe name, or open Home, Create, Account, or Privacy Policy.'
@@ -730,7 +961,10 @@ const AIComponent = ({
       resetTranscript();
       setIsSpeaking(false);
       isIgnoringInput.current = false;
-      SpeechRecognition.startListening(LISTEN_OPTIONS);
+      SpeechRecognition.startListening({
+        ...LISTEN_OPTIONS,
+        language: RECOGNITION_LANGUAGE,
+      });
     };
 
     window.speechSynthesis.speak(utterance);
@@ -744,9 +978,9 @@ const AIComponent = ({
 
     if (!listening || wakeWordDetected || isSpeaking || isIgnoringInput.current || isInCreatePromptMode || isInRefinePromptMode) return;
 
-    const currentText = (interimTranscript || transcript).toLowerCase();
+    const currentText = interimTranscript || transcript;
 
-    if (currentText.includes(WAKE_WORD)) {
+    if (getWakeWordMatch(currentText)) {
       setWakeWordDetected(true);
       setDisplayText('');
       const wakeResponse = getWakeWordResponse(lastWakeResponse.current);
@@ -895,7 +1129,10 @@ const AIComponent = ({
     setWakeWordDetected(false);
     setDisplayText('');
     isIgnoringInput.current = false;
-    SpeechRecognition.startListening(LISTEN_OPTIONS);
+    SpeechRecognition.startListening({
+      ...LISTEN_OPTIONS,
+      language: RECOGNITION_LANGUAGE,
+    });
   };
 
   if (!browserSupportsSpeechRecognition) {
