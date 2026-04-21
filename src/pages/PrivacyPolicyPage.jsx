@@ -197,9 +197,10 @@ function PrivacyPolicyPage() {
       <h2>Third Party Processers and Providers</h2>
       <p>Your data may be processed or stored by the following third parties:</p>
       <ul>
-        <li>Google (Via Gemini in Google Studio for recipe generation)</li>
-        <li>MongoDB Atlas (For cloud database)</li>
-        <li>Railway (Hosting)</li>
+        <li>Groq (Via Groq Playground for recipe generation and refinement)</li>
+        <li>Neon(For postgresql cloud database)</li>
+        <li>Vercel (Frontend Hosting)</li>
+        <li>Render (Backend and n8n Hosting)</li>
       </ul>
 
       <h2>Security</h2>
