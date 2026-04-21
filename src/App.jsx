@@ -134,9 +134,18 @@ function App() {
     refreshSession()
     const intervalId = window.setInterval(refreshSession, REFRESH_INTERVAL_MS)
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSession()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
       isActive = false
       window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [isLoggedIn, navigate, refreshEndpoint])
 
