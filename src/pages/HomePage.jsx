@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 const MAX_DROPDOWN_RESULTS = 8
+const RECIPES_PER_PAGE = 9
 
 function normalizeBaseUrl(url) {
   const trimmed = url.trim()
@@ -134,6 +135,41 @@ function toNumber(value, options = {}) {
   return parsedValue
 }
 
+function toPositiveInteger(value) {
+  const parsedValue = Number(value)
+
+  if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+    return null
+  }
+
+  return parsedValue
+}
+
+function getCurrentPageFromSearchParams(searchParams) {
+  return toPositiveInteger(searchParams.get('page')) ?? 1
+}
+
+function getTotalPagesFromPayload(payload) {
+  const paginationSources = [payload?.pagination, payload?.data?.pagination, payload, payload?.data]
+
+  for (const source of paginationSources) {
+    const totalPages = toPositiveInteger(source?.totalPages)
+
+    if (totalPages) {
+      return totalPages
+    }
+
+    const totalItems = source?.totalItems ?? source?.totalCount ?? source?.count
+    const totalItemsNumber = Number(totalItems)
+
+    if (Number.isFinite(totalItemsNumber) && totalItemsNumber >= 0) {
+      return Math.max(1, Math.ceil(totalItemsNumber / RECIPES_PER_PAGE))
+    }
+  }
+
+  return null
+}
+
 function normalizeFilters(safeFilters, selectedDietary, selectedAllergens) {
   const normalized = {
     difficulty: safeFilters.difficulty ? String(safeFilters.difficulty).trim() : undefined,
@@ -188,7 +224,7 @@ function getSearchNameFromParams(searchParams) {
   return String(searchParams.get('name') ?? searchParams.get('search') ?? searchParams.get('query') ?? '').trim()
 }
 
-function buildFilterSearchParams(previousParams, name, normalizedFilters) {
+function buildFilterSearchParams(previousParams, name, normalizedFilters, page) {
   const nextParams = new URLSearchParams(previousParams)
   const filterKeys = [
     'name',
@@ -207,6 +243,7 @@ function buildFilterSearchParams(previousParams, name, normalizedFilters) {
     'maxPrepTimeInMinutes',
     'minCookingTimeInMinutes',
     'maxCookingTimeInMinutes',
+    'page',
   ]
 
   filterKeys.forEach((key) => nextParams.delete(key))
@@ -231,6 +268,8 @@ function buildFilterSearchParams(previousParams, name, normalizedFilters) {
     nextParams.set(key, String(value))
   })
 
+  nextParams.set('page', String(page))
+
   return nextParams
 }
 
@@ -244,6 +283,7 @@ function setSearchParamsIfChanged(searchParams, setSearchParams, nextParams) {
 
 function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
   const [searchParams, setSearchParams] = useSearchParams()
+  const hasInitializedFiltersRef = useRef(false)
   const [recipes, setRecipes] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState('')
@@ -274,6 +314,9 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
     minRating: '',
     maxRating: '',
   })
+  const [currentPage, setCurrentPage] = useState(() => getCurrentPageFromSearchParams(searchParams))
+  const [totalPages, setTotalPages] = useState(1)
+  const [hasNextPage, setHasNextPage] = useState(false)
 
   const recipesEndpoint = useMemo(() => {
     const normalizedBaseUrl = normalizeBaseUrl(apiBaseUrl)
@@ -422,10 +465,11 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
     setAppliedSafeFilters(nextAppliedFilters)
     setAppliedSelectedDietary(nextAppliedDietary)
     setAppliedSelectedAllergens(nextAppliedAllergens)
+    setCurrentPage(1)
     setSearchParamsIfChanged(
       searchParams,
       setSearchParams,
-      buildFilterSearchParams(searchParams, debouncedSearchValue.trim(), normalizedAppliedFilters),
+      buildFilterSearchParams(searchParams, debouncedSearchValue.trim(), normalizedAppliedFilters, 1),
     )
   }
 
@@ -450,7 +494,20 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
     setAllergenQuery('')
     onSearchValueChange?.('')
     setDebouncedSearchValue('')
-    setSearchParamsIfChanged(searchParams, setSearchParams, buildFilterSearchParams(searchParams, '', {}))
+    setCurrentPage(1)
+    setSearchParamsIfChanged(searchParams, setSearchParams, buildFilterSearchParams(searchParams, '', {}, 1))
+  }
+
+  const handlePreviousPage = () => {
+    setCurrentPage((previous) => Math.max(1, previous - 1))
+  }
+
+  const handleNextPage = () => {
+    if (!hasNextPage) {
+      return
+    }
+
+    setCurrentPage((previous) => previous + 1)
   }
 
   useEffect(() => {
@@ -482,6 +539,7 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
     setSelectedAllergens(nextSelectedAllergens)
     setAppliedSelectedDietary(nextSelectedDietary)
     setAppliedSelectedAllergens(nextSelectedAllergens)
+    setCurrentPage(getCurrentPageFromSearchParams(searchParams))
     setDebouncedSearchValue(nextSearchValue)
     onSearchValueChange?.(nextSearchValue)
 
@@ -490,19 +548,37 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
       setSearchParamsIfChanged(
         searchParams,
         setSearchParams,
-        buildFilterSearchParams(searchParams, nextSearchValue, normalizedFromUrl),
+        buildFilterSearchParams(
+          searchParams,
+          nextSearchValue,
+          normalizedFromUrl,
+          getCurrentPageFromSearchParams(searchParams),
+        ),
       )
     }
   }, [])
+
+  useEffect(() => {
+    setCurrentPage(getCurrentPageFromSearchParams(searchParams))
+  }, [searchParams])
+
+  useEffect(() => {
+    if (!hasInitializedFiltersRef.current) {
+      hasInitializedFiltersRef.current = true
+      return
+    }
+
+    setCurrentPage(1)
+  }, [filtersQueryString])
 
   useEffect(() => {
     const normalizedAppliedFilters = normalizeFilters(appliedSafeFilters, appliedSelectedDietary, appliedSelectedAllergens)
     setSearchParamsIfChanged(
       searchParams,
       setSearchParams,
-      buildFilterSearchParams(searchParams, debouncedSearchValue.trim(), normalizedAppliedFilters),
+      buildFilterSearchParams(searchParams, debouncedSearchValue.trim(), normalizedAppliedFilters, currentPage),
     )
-  }, [appliedSafeFilters, appliedSelectedAllergens, appliedSelectedDietary, debouncedSearchValue, searchParams, setSearchParams])
+  }, [appliedSafeFilters, appliedSelectedAllergens, appliedSelectedDietary, currentPage, debouncedSearchValue, searchParams, setSearchParams])
 
   useEffect(() => {
     let isMounted = true
@@ -547,9 +623,10 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
       setIsLoading(true)
       setErrorMessage('')
 
-      const requestUrl = filtersQueryString
-        ? `${recipesEndpoint}?${filtersQueryString}`
-        : recipesEndpoint
+      const queryParams = new URLSearchParams(filtersQueryString)
+      queryParams.set('page', String(currentPage))
+      queryParams.set('limit', String(RECIPES_PER_PAGE))
+      const requestUrl = `${recipesEndpoint}?${queryParams.toString()}`
 
       try {
         const response = await fetch(requestUrl, {
@@ -570,16 +647,23 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
               'We could not load recipes right now. Please try again in a moment.',
             ),
           )
+          setHasNextPage(false)
           return
         }
 
-        setRecipes(Array.isArray(payload?.data) ? payload.data : [])
+        const recipeList = extractListFromPayload(payload)
+        const nextTotalPages = getTotalPagesFromPayload(payload)
+
+        setRecipes(recipeList)
+        setTotalPages(nextTotalPages ?? currentPage)
+        setHasNextPage(nextTotalPages ? currentPage < nextTotalPages : recipeList.length === RECIPES_PER_PAGE)
       } catch {
         if (!isActive) {
           return
         }
 
         setErrorMessage('We could not load recipes right now. Please try again in a moment.')
+        setHasNextPage(false)
       } finally {
         if (isActive) {
           setIsLoading(false)
@@ -592,7 +676,7 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
     return () => {
       isActive = false
     }
-  }, [filtersQueryString, recipesEndpoint])
+  }, [currentPage, filtersQueryString, recipesEndpoint])
 
   useEffect(() => {
     onRecipesChange?.(recipes)
@@ -752,7 +836,7 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
 
       {isLoading ? (
         <div className="home-recipes-skeleton-grid" aria-hidden="true">
-          {Array.from({ length: 6 }).map((_, index) => (
+          {Array.from({ length: RECIPES_PER_PAGE }).map((_, index) => (
             <div key={index} className="home-recipe-skeleton-card">
               <div className="skeleton-line skeleton-status" />
               <div className="skeleton-line skeleton-title" />
@@ -768,18 +852,29 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
 
       {!isLoading && !errorMessage ? (
         recipes.length > 0 ? (
-          <div className="home-recipes-grid">
-            {recipes.map((recipe) => (
-              <Link key={recipe.id} to={`/recipes/${recipe.id}`} className="home-recipe-card">
-                <p className="home-recipe-status">{getStatusLabel(recipe.status)}</p>
-                <h2>{recipe.title}</h2>
-                <p className="home-recipe-meta">{recipe.difficulty}</p>
-                <p className="home-recipe-meta">
-                  {recipe.prepTimeInMinutes + recipe.cookingTimeInMinutes} min total
-                </p>
-              </Link>
-            ))}
-          </div>
+          <>
+            <div className="home-recipes-grid">
+              {recipes.map((recipe) => (
+                <Link key={recipe.id} to={`/recipes/${recipe.id}`} className="home-recipe-card">
+                  <p className="home-recipe-status">{getStatusLabel(recipe.status)}</p>
+                  <h2>{recipe.title}</h2>
+                  <p className="home-recipe-meta">{recipe.difficulty}</p>
+                  <p className="home-recipe-meta">
+                    {recipe.prepTimeInMinutes + recipe.cookingTimeInMinutes} min total
+                  </p>
+                </Link>
+              ))}
+            </div>
+            <div className="home-pagination" aria-label="Recipe pagination">
+              <button type="button" className="home-pagination-button" onClick={handlePreviousPage} disabled={currentPage <= 1}>
+                Previous
+              </button>
+              <p className="home-pagination-status">Page {currentPage}{totalPages > currentPage ? ` of ${totalPages}` : ''}</p>
+              <button type="button" className="home-pagination-button" onClick={handleNextPage} disabled={!hasNextPage}>
+                Next
+              </button>
+            </div>
+          </>
         ) : (
           <div className="home-recipes-empty">No recipes yet. Create one from the Create page.</div>
         )
