@@ -499,11 +499,15 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
   }
 
   const handlePreviousPage = () => {
+    if (isLoading) {
+      return
+    }
+
     setCurrentPage((previous) => Math.max(1, previous - 1))
   }
 
   const handleNextPage = () => {
-    if (!hasNextPage) {
+    if (isLoading || !hasNextPage) {
       return
     }
 
@@ -618,6 +622,7 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
 
   useEffect(() => {
     let isActive = true
+    const abortController = new AbortController()
 
     const loadRecipes = async () => {
       setIsLoading(true)
@@ -632,6 +637,7 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
         const response = await fetch(requestUrl, {
           method: 'GET',
           credentials: 'include',
+          signal: abortController.signal,
         })
 
         const payload = await response.json().catch(() => null)
@@ -657,7 +663,11 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
         setRecipes(recipeList)
         setTotalPages(nextTotalPages ?? currentPage)
         setHasNextPage(nextTotalPages ? currentPage < nextTotalPages : recipeList.length === RECIPES_PER_PAGE)
-      } catch {
+      } catch (error) {
+        if (error?.name === 'AbortError') {
+          return
+        }
+
         if (!isActive) {
           return
         }
@@ -675,6 +685,7 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
 
     return () => {
       isActive = false
+      abortController.abort()
     }
   }, [currentPage, filtersQueryString, recipesEndpoint])
 
@@ -866,11 +877,11 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
               ))}
             </div>
             <div className="home-pagination" aria-label="Recipe pagination">
-              <button type="button" className="home-pagination-button" onClick={handlePreviousPage} disabled={currentPage <= 1}>
+              <button type="button" className="home-pagination-button" onClick={handlePreviousPage} disabled={isLoading || currentPage <= 1}>
                 Previous
               </button>
               <p className="home-pagination-status">Page {currentPage}{totalPages > currentPage ? ` of ${totalPages}` : ''}</p>
-              <button type="button" className="home-pagination-button" onClick={handleNextPage} disabled={!hasNextPage}>
+              <button type="button" className="home-pagination-button" onClick={handleNextPage} disabled={isLoading || !hasNextPage}>
                 Next
               </button>
             </div>

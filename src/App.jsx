@@ -106,12 +106,7 @@ function App() {
 
         const payload = await response.json().catch(() => null)
 
-        if (
-          response.status === 401 ||
-          response.status === 403 ||
-          payload?.success === false ||
-          payload?.status === 'error'
-        ) {
+        if (response.status === 401 || response.status === 403) {
           clearAuthState()
           navigate('/login', { replace: true })
           return
