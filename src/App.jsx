@@ -58,6 +58,14 @@ function App() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [homeSearchValue, setHomeSearchValue] = useState('')
   const [homeRecipes, setHomeRecipes] = useState([])
+  const [homeVoiceDifficultyRequest, setHomeVoiceDifficultyRequest] = useState(null)
+  const [homeVoiceTimeRequest, setHomeVoiceTimeRequest] = useState(null)
+  const [homeVoiceDietaryRequest, setHomeVoiceDietaryRequest] = useState(null)
+  const [homeVoiceAllergenRequest, setHomeVoiceAllergenRequest] = useState(null)
+  const [homeVoiceServingsRequest, setHomeVoiceServingsRequest] = useState(null)
+  const [homeVoiceRatingRequest, setHomeVoiceRatingRequest] = useState(null)
+  const [homeVoiceApplyFiltersToken, setHomeVoiceApplyFiltersToken] = useState(0)
+  const [homeVoiceClearFiltersToken, setHomeVoiceClearFiltersToken] = useState(0)
   const [createRecipes, setCreateRecipes] = useState([])
   const [createVoicePromptRequest, setCreateVoicePromptRequest] = useState(null)
   const [createVoicePromptLiveText, setCreateVoicePromptLiveText] = useState('')
@@ -278,6 +286,98 @@ function App() {
     setCreateVoicePromptLiveText(String(promptText ?? ''))
   }
 
+  const handleSetHomeDifficultyFilterViaVoice = (difficulty) => {
+    const normalizedDifficulty = String(difficulty ?? '').trim()
+
+    if (!normalizedDifficulty) {
+      return
+    }
+
+    setHomeVoiceDifficultyRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      difficulty: normalizedDifficulty,
+    })
+  }
+
+  const handleSetHomeTimeFilterViaVoice = (type, minutes) => {
+    const normalizedType = String(type ?? '').trim().toLowerCase()
+    const parsedMinutes = Number(minutes)
+
+    if ((normalizedType !== 'min' && normalizedType !== 'max') || !Number.isInteger(parsedMinutes) || parsedMinutes < 0) {
+      return
+    }
+
+    setHomeVoiceTimeRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      type: normalizedType,
+      minutes: parsedMinutes,
+    })
+  }
+
+  const handleAddHomeDietaryFilterViaVoice = (dietaryPreference) => {
+    const normalizedDietaryPreference = String(dietaryPreference ?? '').trim()
+
+    if (!normalizedDietaryPreference) {
+      return
+    }
+
+    setHomeVoiceDietaryRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      dietaryPreference: normalizedDietaryPreference,
+    })
+  }
+
+  const handleAddHomeAllergenFilterViaVoice = (allergen) => {
+    const normalizedAllergen = String(allergen ?? '').trim()
+
+    if (!normalizedAllergen) {
+      return
+    }
+
+    setHomeVoiceAllergenRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      allergen: normalizedAllergen,
+    })
+  }
+
+  const handleSetHomeServingsFilterViaVoice = (type, servings) => {
+    const normalizedType = String(type ?? '').trim().toLowerCase()
+    const parsedServings = Number(servings)
+
+    if ((normalizedType !== 'min' && normalizedType !== 'max') || !Number.isInteger(parsedServings) || parsedServings < 1) {
+      return
+    }
+
+    setHomeVoiceServingsRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      type: normalizedType,
+      servings: parsedServings,
+    })
+  }
+
+  const handleSetHomeRatingFilterViaVoice = (type, rating) => {
+    const normalizedType = String(type ?? '').trim().toLowerCase()
+    const parsedRating = Number(rating)
+
+    if ((normalizedType !== 'min' && normalizedType !== 'max') || !Number.isInteger(parsedRating) || parsedRating < 0 || parsedRating > 5) {
+      return
+    }
+
+    setHomeVoiceRatingRequest({
+      id: `${Date.now()}-${Math.random()}`,
+      type: normalizedType,
+      rating: parsedRating,
+    })
+  }
+
+  const handleApplyHomeFiltersViaVoice = () => {
+    setHomeVoiceApplyFiltersToken((previous) => previous + 1)
+  }
+
+  const handleClearHomeFiltersViaVoice = () => {
+    setHomeVoiceClearFiltersToken((previous) => previous + 1)
+  }
+
   const handleRefineRecipePromptViaVoice = (promptText) => {
     const trimmedPrompt = String(promptText ?? '').trim()
 
@@ -385,6 +485,14 @@ function App() {
                   searchValue={homeSearchValue}
                   onSearchValueChange={setHomeSearchValue}
                   onRecipesChange={setHomeRecipes}
+                  voiceDifficultyRequest={homeVoiceDifficultyRequest}
+                  voiceTimeRequest={homeVoiceTimeRequest}
+                  voiceDietaryRequest={homeVoiceDietaryRequest}
+                  voiceAllergenRequest={homeVoiceAllergenRequest}
+                  voiceServingsRequest={homeVoiceServingsRequest}
+                  voiceRatingRequest={homeVoiceRatingRequest}
+                  voiceApplyFiltersToken={homeVoiceApplyFiltersToken}
+                  voiceClearFiltersToken={homeVoiceClearFiltersToken}
                 />
               ) : (
                 <Navigate to="/login" replace />
@@ -480,6 +588,14 @@ function App() {
         onCreateVoicePrompt={handleCreatePromptViaVoice}
         onCreateVoicePromptLive={handleCreatePromptLiveViaVoice}
         onResetCreateView={handleResetCreateView}
+        onSetHomeDifficultyFilter={handleSetHomeDifficultyFilterViaVoice}
+        onSetHomeTimeFilter={handleSetHomeTimeFilterViaVoice}
+        onSetHomeDietaryFilter={handleAddHomeDietaryFilterViaVoice}
+        onSetHomeAllergenFilter={handleAddHomeAllergenFilterViaVoice}
+        onSetHomeServingsFilter={handleSetHomeServingsFilterViaVoice}
+        onSetHomeRatingFilter={handleSetHomeRatingFilterViaVoice}
+        onApplyHomeFilters={handleApplyHomeFiltersViaVoice}
+        onClearHomeFilters={handleClearHomeFiltersViaVoice}
       />
     </div>
   )

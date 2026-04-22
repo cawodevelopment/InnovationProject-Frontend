@@ -6,6 +6,62 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 const MAX_DROPDOWN_RESULTS = 8
 const RECIPES_PER_PAGE = 8
 
+function normalizeDifficultyValue(value) {
+  const normalized = String(value ?? '').trim().toLowerCase()
+
+  if (normalized === 'easy') {
+    return 'Easy'
+  }
+
+  if (normalized === 'medium') {
+    return 'Medium'
+  }
+
+  if (normalized === 'hard') {
+    return 'Hard'
+  }
+
+  return ''
+}
+
+function normalizeMinutesValue(value) {
+  const parsedValue = Number(value)
+
+  if (!Number.isInteger(parsedValue) || parsedValue < 0) {
+    return ''
+  }
+
+  return String(parsedValue)
+}
+
+function normalizeServingsValue(value) {
+  const parsedValue = Number(value)
+
+  if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+    return ''
+  }
+
+  return String(parsedValue)
+}
+
+function normalizeRatingValue(value) {
+  const parsedValue = Number(value)
+
+  if (!Number.isInteger(parsedValue) || parsedValue < 0 || parsedValue > 5) {
+    return ''
+  }
+
+  return String(parsedValue)
+}
+
+function normalizeTagValue(value) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function normalizeBaseUrl(url) {
   const trimmed = url.trim()
 
@@ -281,7 +337,19 @@ function setSearchParamsIfChanged(searchParams, setSearchParams, nextParams) {
   setSearchParams(nextParams, { replace: true })
 }
 
-function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
+function HomePage({
+  searchValue = '',
+  onSearchValueChange,
+  onRecipesChange,
+  voiceDifficultyRequest,
+  voiceTimeRequest,
+  voiceDietaryRequest,
+  voiceAllergenRequest,
+  voiceServingsRequest,
+  voiceRatingRequest,
+  voiceApplyFiltersToken = 0,
+  voiceClearFiltersToken = 0,
+}) {
   const [searchParams, setSearchParams] = useSearchParams()
   const hasInitializedFiltersRef = useRef(false)
   const [recipes, setRecipes] = useState([])
@@ -513,6 +581,136 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
 
     setCurrentPage((previous) => previous + 1)
   }
+
+  useEffect(() => {
+    const requestedDifficulty = normalizeDifficultyValue(voiceDifficultyRequest?.difficulty)
+
+    if (!requestedDifficulty) {
+      return
+    }
+
+    setSafeFilters((previous) => ({
+      ...previous,
+      difficulty: requestedDifficulty,
+    }))
+  }, [voiceDifficultyRequest])
+
+  useEffect(() => {
+    const requestType = String(voiceTimeRequest?.type ?? '').trim().toLowerCase()
+    const requestedMinutes = normalizeMinutesValue(voiceTimeRequest?.minutes)
+
+    if (!requestedMinutes || (requestType !== 'min' && requestType !== 'max')) {
+      return
+    }
+
+    setSafeFilters((previous) => ({
+      ...previous,
+      minTotalTimeInMinutes: requestType === 'min' ? requestedMinutes : previous.minTotalTimeInMinutes,
+      maxTotalTimeInMinutes: requestType === 'max' ? requestedMinutes : previous.maxTotalTimeInMinutes,
+    }))
+  }, [voiceTimeRequest])
+
+  useEffect(() => {
+    const requestedDietary = String(voiceDietaryRequest?.dietaryPreference ?? '').trim()
+
+    if (!requestedDietary) {
+      return
+    }
+
+    const normalizedRequestedDietary = normalizeTagValue(requestedDietary)
+
+    if (!normalizedRequestedDietary) {
+      return
+    }
+
+    const matchedOption = availableDietaryOptions.find(
+      (option) => normalizeTagValue(option.label) === normalizedRequestedDietary,
+    )
+
+    const optionToAdd = matchedOption ?? { id: requestedDietary, label: requestedDietary }
+
+    setSelectedDietary((previous) => {
+      if (previous.some((item) => sameOption(item, optionToAdd))) {
+        return previous
+      }
+
+      return [...previous, optionToAdd]
+    })
+  }, [availableDietaryOptions, voiceDietaryRequest])
+
+  useEffect(() => {
+    const requestedAllergen = String(voiceAllergenRequest?.allergen ?? '').trim()
+
+    if (!requestedAllergen) {
+      return
+    }
+
+    const normalizedRequestedAllergen = normalizeTagValue(requestedAllergen)
+
+    if (!normalizedRequestedAllergen) {
+      return
+    }
+
+    const matchedOption = availableAllergenOptions.find(
+      (option) => normalizeTagValue(option.label) === normalizedRequestedAllergen,
+    )
+
+    const optionToAdd = matchedOption ?? { id: requestedAllergen, label: requestedAllergen }
+
+    setSelectedAllergens((previous) => {
+      if (previous.some((item) => sameOption(item, optionToAdd))) {
+        return previous
+      }
+
+      return [...previous, optionToAdd]
+    })
+  }, [availableAllergenOptions, voiceAllergenRequest])
+
+  useEffect(() => {
+    const requestType = String(voiceServingsRequest?.type ?? '').trim().toLowerCase()
+    const requestedServings = normalizeServingsValue(voiceServingsRequest?.servings)
+
+    if (!requestedServings || (requestType !== 'min' && requestType !== 'max')) {
+      return
+    }
+
+    setSafeFilters((previous) => ({
+      ...previous,
+      minServings: requestType === 'min' ? requestedServings : previous.minServings,
+      maxServings: requestType === 'max' ? requestedServings : previous.maxServings,
+    }))
+  }, [voiceServingsRequest])
+
+  useEffect(() => {
+    const requestType = String(voiceRatingRequest?.type ?? '').trim().toLowerCase()
+    const requestedRating = normalizeRatingValue(voiceRatingRequest?.rating)
+
+    if (!requestedRating || (requestType !== 'min' && requestType !== 'max')) {
+      return
+    }
+
+    setSafeFilters((previous) => ({
+      ...previous,
+      minRating: requestType === 'min' ? requestedRating : previous.minRating,
+      maxRating: requestType === 'max' ? requestedRating : previous.maxRating,
+    }))
+  }, [voiceRatingRequest])
+
+  useEffect(() => {
+    if (voiceApplyFiltersToken <= 0) {
+      return
+    }
+
+    handleApplyFilters()
+  }, [voiceApplyFiltersToken])
+
+  useEffect(() => {
+    if (voiceClearFiltersToken <= 0) {
+      return
+    }
+
+    handleClearFilters()
+  }, [voiceClearFiltersToken])
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {

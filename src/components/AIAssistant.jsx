@@ -29,6 +29,33 @@ const WAKE_WORD_RESPONSES = [
   'What should we do?',
 ];
 
+const DIETARY_PREFERENCE_OPTIONS = [
+  'Vegetarian',
+  'Dairy-Free',
+  'Halal',
+  'Gluten-Free',
+  'Paleo',
+  'Pescatarian',
+  'Kosher',
+  'Keto',
+  'Vegan',
+  'Mediterranean',
+  'High-Protein',
+  'Low-Carb',
+];
+
+const ALLERGEN_OPTIONS = [
+  'Eggs',
+  'Shellfish',
+  'Fish',
+  'Soy',
+  'Tree Nuts',
+  'Peanuts',
+  'Milk',
+  'Wheat',
+  'Sesame',
+];
+
 const NAVIGATION_INTENTS = [
   {
     route: '/',
@@ -116,6 +143,13 @@ const normalizeCommand = (text) =>
   String(text || '')
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const normalizeTagValue = (text) =>
+  String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -454,6 +488,210 @@ const isPreviousPageCommand = (normalizedCommand) => {
   return previousPatterns.some((pattern) => pattern.test(normalizedCommand));
 };
 
+const extractDifficultyFilterValue = (normalizedCommand) => {
+  const match = normalizedCommand.match(/^(?:set\s+)?difficulty(?:\s+to)?\s+(easy|medium|hard)$/);
+
+  if (!match?.[1]) {
+    return '';
+  }
+
+  const value = match[1].toLowerCase();
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
+const extractTimeFilterRequest = (normalizedCommand) => {
+  const match = normalizedCommand.match(/^(?:set\s+)?(min|minimum|max|maximum)\s+time(?:\s+to)?\s+(\d+)(?:\s+minutes?)?$/);
+
+  if (!match?.[1] || !match?.[2]) {
+    return null;
+  }
+
+  const type = match[1] === 'min' || match[1] === 'minimum' ? 'min' : 'max';
+  const minutes = Number(match[2]);
+
+  if (!Number.isInteger(minutes) || minutes < 0) {
+    return null;
+  }
+
+  return { type, minutes };
+};
+
+const extractServingsFilterRequest = (normalizedCommand) => {
+  const match = normalizedCommand.match(/^(?:set\s+)?(min|minimum|max|maximum)\s+servings?(?:\s+to)?\s+(\d+)$/);
+
+  if (!match?.[1] || !match?.[2]) {
+    return null;
+  }
+
+  const type = match[1] === 'min' || match[1] === 'minimum' ? 'min' : 'max';
+  const servings = Number(match[2]);
+
+  if (!Number.isInteger(servings) || servings < 1) {
+    return null;
+  }
+
+  return { type, servings };
+};
+
+const extractRatingFilterRequest = (normalizedCommand) => {
+  const match = normalizedCommand.match(/^(?:set\s+)?(min|minimum|max|maximum)\s+ratings?(?:\s+to)?\s+(\d+)$/);
+
+  if (!match?.[1] || !match?.[2]) {
+    return null;
+  }
+
+  const type = match[1] === 'min' || match[1] === 'minimum' ? 'min' : 'max';
+  const rating = Number(match[2]);
+
+  if (!Number.isInteger(rating) || rating < 0 || rating > 5) {
+    return null;
+  }
+
+  return { type, rating };
+};
+
+const extractDietaryFilterValue = (normalizedCommand) => {
+  const patterns = [
+    /^set\s+dietary\s+preferences?(?:\s+to)?\s+(.+)$/,
+    /^set\s+diet\s+preferences?(?:\s+to)?\s+(.+)$/,
+    /^set\s+diet\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^set\s+dietary\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^diet\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^dietary\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^add\s+dietary\s+preferences?(?:\s+to)?\s+(.+)$/,
+    /^add\s+diet\s+preferences?(?:\s+to)?\s+(.+)$/,
+    /^add\s+diet\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^add\s+dietary\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^set\s+dietary\s+to\s+(.+)$/,
+    /^set\s+diet\s+to\s+(.+)$/,
+    /^add\s+dietary\s+(.+)$/,
+    /^add\s+diet\s+(.+)$/,
+    /^include\s+dietary\s+preferences?(?:\s+to)?\s+(.+)$/,
+    /^include\s+diet\s+preferences?(?:\s+to)?\s+(.+)$/,
+    /^include\s+diet\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^include\s+dietary\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^i\s+want\s+diet(?:ary)?\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+    /^with\s+diet(?:ary)?\s+pref(?:erence)?s?(?:\s+to)?\s+(.+)$/,
+  ];
+
+  let rawValue = '';
+
+  for (const pattern of patterns) {
+    const match = normalizedCommand.match(pattern);
+
+    if (match?.[1]) {
+      rawValue = match[1].trim();
+      break;
+    }
+  }
+
+  if (!rawValue) {
+    return '';
+  }
+
+  const normalizedValue = normalizeTagValue(rawValue);
+
+  if (!normalizedValue) {
+    return '';
+  }
+
+  const exactMatch = DIETARY_PREFERENCE_OPTIONS.find(
+    (option) => normalizeTagValue(option) === normalizedValue
+  );
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const includesMatch = DIETARY_PREFERENCE_OPTIONS.find((option) => {
+    const normalizedOption = normalizeTagValue(option);
+    return normalizedOption.includes(normalizedValue) || normalizedValue.includes(normalizedOption);
+  });
+
+  return includesMatch ?? rawValue;
+};
+
+const extractAllergenFilterValue = (normalizedCommand) => {
+  const patterns = [
+    /^set\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^set\s+exclude\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^set\s+excluded\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^add\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^add\s+exclude\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^add\s+excluded\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^exclude\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^exclude\s+allergen\s+(.+)$/,
+    /^excluding\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^set\s+allergen\s+to\s+(.+)$/,
+    /^set\s+exclude\s+allergen\s+to\s+(.+)$/,
+    /^set\s+excluded\s+allergen\s+to\s+(.+)$/,
+    /^add\s+allergen\s+(.+)$/,
+    /^add\s+exclude\s+allergen\s+(.+)$/,
+    /^add\s+excluded\s+allergen\s+(.+)$/,
+    /^without\s+allergens?(?:\s+to)?\s+(.+)$/,
+    /^no\s+allergens?(?:\s+to)?\s+(.+)$/,
+  ];
+
+  let rawValue = '';
+
+  for (const pattern of patterns) {
+    const match = normalizedCommand.match(pattern);
+
+    if (match?.[1]) {
+      rawValue = match[1].trim();
+      break;
+    }
+  }
+
+  if (!rawValue) {
+    return '';
+  }
+
+  const normalizedValue = normalizeTagValue(rawValue);
+
+  if (!normalizedValue) {
+    return '';
+  }
+
+  const exactMatch = ALLERGEN_OPTIONS.find(
+    (option) => normalizeTagValue(option) === normalizedValue
+  );
+
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const includesMatch = ALLERGEN_OPTIONS.find((option) => {
+    const normalizedOption = normalizeTagValue(option);
+    return normalizedOption.includes(normalizedValue) || normalizedValue.includes(normalizedOption);
+  });
+
+  return includesMatch ?? rawValue;
+};
+
+const isApplyFiltersCommand = (normalizedCommand) => {
+  const applyPatterns = [
+    /^apply$/,
+    /^apply\s+filters$/,
+    /^apply\s+filter$/,
+  ];
+
+  return applyPatterns.some((pattern) => pattern.test(normalizedCommand));
+};
+
+const isClearFiltersCommand = (normalizedCommand) => {
+  const clearPatterns = [
+    /^clear$/,
+    /^reset$/,
+    /^clear\s+filters$/,
+    /^clear\s+filter$/,
+    /^reset\s+filters$/,
+    /^reset\s+filter$/,
+  ];
+
+  return clearPatterns.some((pattern) => pattern.test(normalizedCommand));
+};
+
 const getPageFromSearch = (searchText) => {
   const query = new URLSearchParams(searchText || '');
   const currentPage = Number(query.get('page'));
@@ -732,6 +970,14 @@ const AIComponent = ({
   onCreateVoicePrompt,
   onCreateVoicePromptLive,
   onResetCreateView,
+  onSetHomeDifficultyFilter,
+  onSetHomeTimeFilter,
+  onSetHomeDietaryFilter,
+  onSetHomeAllergenFilter,
+  onSetHomeServingsFilter,
+  onSetHomeRatingFilter,
+  onApplyHomeFilters,
+  onClearHomeFilters,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -790,6 +1036,119 @@ const AIComponent = ({
   const handleVoiceCommand = (rawText) => {
     const normalizedCmd = normalizeCommand(rawText);
     const isOnCreatePage = currentPath === '/create';
+    const difficultyFilterValue = extractDifficultyFilterValue(normalizedCmd);
+    const timeFilterRequest = extractTimeFilterRequest(normalizedCmd);
+    const dietaryFilterValue = extractDietaryFilterValue(normalizedCmd);
+    const allergenFilterValue = extractAllergenFilterValue(normalizedCmd);
+    const servingsFilterRequest = extractServingsFilterRequest(normalizedCmd);
+    const ratingFilterRequest = extractRatingFilterRequest(normalizedCmd);
+    const wantsToApplyFilters = isApplyFiltersCommand(normalizedCmd);
+    const wantsToClearFilters = isClearFiltersCommand(normalizedCmd);
+
+    if (difficultyFilterValue || timeFilterRequest || dietaryFilterValue || allergenFilterValue || servingsFilterRequest || ratingFilterRequest || wantsToApplyFilters || wantsToClearFilters) {
+      if (currentPath !== '/') {
+        speakResponse('Filter commands are available on Home recipes.');
+        return;
+      }
+
+      if (allergenFilterValue) {
+        if (!onSetHomeAllergenFilter) {
+          speakResponse('I cannot update filters right now.');
+          return;
+        }
+
+        onSetHomeAllergenFilter(allergenFilterValue);
+        speakResponse(`Added allergen ${allergenFilterValue}. Say apply filters when ready.`);
+        return;
+      }
+
+      if (dietaryFilterValue) {
+        if (!onSetHomeDietaryFilter) {
+          speakResponse('I cannot update filters right now.');
+          return;
+        }
+
+        onSetHomeDietaryFilter(dietaryFilterValue);
+        speakResponse(`Added dietary preference ${dietaryFilterValue}. Say apply filters when ready.`);
+        return;
+      }
+
+      if (servingsFilterRequest) {
+        if (!onSetHomeServingsFilter) {
+          speakResponse('I cannot update filters right now.');
+          return;
+        }
+
+        onSetHomeServingsFilter(servingsFilterRequest.type, servingsFilterRequest.servings);
+        speakResponse(
+          servingsFilterRequest.type === 'min'
+            ? `Set minimum servings to ${servingsFilterRequest.servings}. Say apply filters when ready.`
+            : `Set maximum servings to ${servingsFilterRequest.servings}. Say apply filters when ready.`
+        );
+        return;
+      }
+
+      if (ratingFilterRequest) {
+        if (!onSetHomeRatingFilter) {
+          speakResponse('I cannot update filters right now.');
+          return;
+        }
+
+        onSetHomeRatingFilter(ratingFilterRequest.type, ratingFilterRequest.rating);
+        speakResponse(
+          ratingFilterRequest.type === 'min'
+            ? `Set minimum rating to ${ratingFilterRequest.rating}. Say apply filters when ready.`
+            : `Set maximum rating to ${ratingFilterRequest.rating}. Say apply filters when ready.`
+        );
+        return;
+      }
+
+      if (timeFilterRequest) {
+        if (!onSetHomeTimeFilter) {
+          speakResponse('I cannot update filters right now.');
+          return;
+        }
+
+        onSetHomeTimeFilter(timeFilterRequest.type, timeFilterRequest.minutes);
+        speakResponse(
+          timeFilterRequest.type === 'min'
+            ? `Set minimum time to ${timeFilterRequest.minutes} minutes. Say apply filters when ready.`
+            : `Set maximum time to ${timeFilterRequest.minutes} minutes. Say apply filters when ready.`
+        );
+        return;
+      }
+
+      if (difficultyFilterValue) {
+        if (!onSetHomeDifficultyFilter) {
+          speakResponse('I cannot update filters right now.');
+          return;
+        }
+
+        onSetHomeDifficultyFilter(difficultyFilterValue);
+        speakResponse(`Set difficulty to ${difficultyFilterValue}. Say apply filters when ready.`);
+        return;
+      }
+
+      if (wantsToApplyFilters) {
+        if (!onApplyHomeFilters) {
+          speakResponse('I cannot apply filters right now.');
+          return;
+        }
+
+        onApplyHomeFilters();
+        speakResponse('Applying filters.');
+        return;
+      }
+
+      if (!onClearHomeFilters) {
+        speakResponse('I cannot clear filters right now.');
+        return;
+      }
+
+      onClearHomeFilters();
+      speakResponse('Clearing filters.');
+      return;
+    }
 
     if (isOnCreatePage) {
       const createPromptQuery = extractCreatePromptQuery(normalizedCmd);
