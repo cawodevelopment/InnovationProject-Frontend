@@ -4,7 +4,7 @@ import { toUserSafeErrorMessage } from '../utils/userSafeError'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 const MAX_DROPDOWN_RESULTS = 8
-const RECIPES_PER_PAGE = 9
+const RECIPES_PER_PAGE = 8
 
 function normalizeBaseUrl(url) {
   const trimmed = url.trim()
@@ -855,7 +855,7 @@ function HomePage({ searchValue = '', onSearchValueChange, onRecipesChange }) {
           <>
             <div className="home-recipes-grid">
               {recipes.map((recipe) => (
-                <Link key={recipe.id} to={`/recipes/${recipe.id}`} className="home-recipe-card">
+                <Link key={recipe.id} to={`/recipes/${encodeURIComponent(recipe.id)}`} className="home-recipe-card">
                   <p className="home-recipe-status">{getStatusLabel(recipe.status)}</p>
                   <h2>{recipe.title}</h2>
                   <p className="home-recipe-meta">{recipe.difficulty}</p>

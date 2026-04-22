@@ -44,6 +44,14 @@ function RecipeDetailPage() {
     return `${normalizedBaseUrl.replace(/\/$/, '')}/recipes`
   }, [])
 
+  const recipeDetailEndpoint = useMemo(() => {
+    if (!recipeId) {
+      return ''
+    }
+
+    return `${recipesEndpoint.replace(/\/$/, '')}/${encodeURIComponent(recipeId)}`
+  }, [recipeId, recipesEndpoint])
+
   useEffect(() => {
     let isActive = true
 
@@ -52,7 +60,7 @@ function RecipeDetailPage() {
       setErrorMessage('')
 
       try {
-        const response = await fetch(recipesEndpoint, {
+        const response = await fetch(recipeDetailEndpoint, {
           method: 'GET',
           credentials: 'include',
         })
@@ -73,8 +81,15 @@ function RecipeDetailPage() {
           return
         }
 
+        const directRecipe = payload?.data && !Array.isArray(payload.data) ? payload.data : null
+
+        if (directRecipe) {
+          setRecipe(directRecipe)
+          return
+        }
+
         const recipeList = Array.isArray(payload?.data) ? payload.data : []
-        const selectedRecipe = recipeList.find((item) => item.id === recipeId)
+        const selectedRecipe = recipeList.find((item) => String(item?.id) === String(recipeId))
 
         if (!selectedRecipe) {
           setErrorMessage('Recipe not found')
@@ -108,7 +123,7 @@ function RecipeDetailPage() {
     return () => {
       isActive = false
     }
-  }, [recipeId, recipesEndpoint])
+  }, [recipeDetailEndpoint, recipeId])
 
   const handleDeleteRecipe = async () => {
     if (!recipeId || isDeleting) {
