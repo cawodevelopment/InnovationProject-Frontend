@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 const LISTEN_OPTIONS = { continuous: true, interimResults: true };
 const NO_SPEECH_TIMEOUT = 5000;
@@ -423,6 +423,48 @@ const isBackToRecipeCommand = (normalizedCommand) => {
   return backPatterns.some((pattern) => pattern.test(normalizedCommand));
 };
 
+const isNextPageCommand = (normalizedCommand) => {
+  const nextPatterns = [
+    /^next\s+page$/,
+    /^go\s+to\s+next\s+page$/,
+    /^go\s+next\s+page$/,
+    /^open\s+next\s+page$/,
+    /^show\s+next\s+page$/,
+    /^next$/,
+    /^page\s+down$/,
+  ];
+
+  return nextPatterns.some((pattern) => pattern.test(normalizedCommand));
+};
+
+const isPreviousPageCommand = (normalizedCommand) => {
+  const previousPatterns = [
+    /^previous\s+page$/,
+    /^go\s+to\s+previous\s+page$/,
+    /^go\s+previous\s+page$/,
+    /^open\s+previous\s+page$/,
+    /^show\s+previous\s+page$/,
+    /^previous$/,
+    /^prev\s+page$/,
+    /^prev$/,
+    /^back\s+page$/,
+    /^page\s+up$/,
+  ];
+
+  return previousPatterns.some((pattern) => pattern.test(normalizedCommand));
+};
+
+const getPageFromSearch = (searchText) => {
+  const query = new URLSearchParams(searchText || '');
+  const currentPage = Number(query.get('page'));
+
+  if (!Number.isInteger(currentPage) || currentPage < 1) {
+    return 1;
+  }
+
+  return currentPage;
+};
+
 const extractRecipeQuery = (normalizedCommand) => {
   const blockedQueries = new Set([
     'home',
@@ -692,6 +734,7 @@ const AIComponent = ({
   onResetCreateView,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     transcript,
     interimTranscript,
@@ -770,6 +813,43 @@ const AIComponent = ({
         speakResponse('Tell me your prompt.');
         return;
       }
+    }
+
+    if (isNextPageCommand(normalizedCmd)) {
+      if (currentPath !== '/') {
+        speakResponse('Next page is available on Home recipes.');
+        return;
+      }
+
+      const query = new URLSearchParams(location.search || '');
+      const currentPage = getPageFromSearch(location.search);
+      const nextPage = currentPage + 1;
+
+      query.set('page', String(nextPage));
+      navigate({ pathname: '/', search: `?${query.toString()}` });
+      speakResponse(`Opening page ${nextPage}.`);
+      return;
+    }
+
+    if (isPreviousPageCommand(normalizedCmd)) {
+      if (currentPath !== '/') {
+        speakResponse('Previous page is available on Home recipes.');
+        return;
+      }
+
+      const query = new URLSearchParams(location.search || '');
+      const currentPage = getPageFromSearch(location.search);
+
+      if (currentPage <= 1) {
+        speakResponse('You are already on page 1.');
+        return;
+      }
+
+      const previousPage = currentPage - 1;
+      query.set('page', String(previousPage));
+      navigate({ pathname: '/', search: `?${query.toString()}` });
+      speakResponse(`Opening page ${previousPage}.`);
+      return;
     }
 
     const intent = getNavigationIntent(rawText);
