@@ -14,6 +14,8 @@ import AIAssistant from './components/AIAssistant.jsx'
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? ''
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000
+const AUTH_REFRESH_GRACE_PERIOD_MS = 15000
+const AUTH_REFRESH_INITIAL_DELAY_MS = 1000
 
 function normalizeBaseUrl(url) {
   const trimmed = url.trim()
@@ -44,6 +46,14 @@ function clearAuthState() {
   window.localStorage.removeItem('isAuthenticated')
   window.localStorage.removeItem('authToken')
   window.localStorage.removeItem('refreshToken')
+  window.localStorage.removeItem('authLastLoginAt')
+}
+
+function getLastAuthLoginAt() {
+  const rawValue = window.localStorage.getItem('authLastLoginAt')
+  const parsedValue = Number(rawValue)
+
+  return Number.isFinite(parsedValue) ? parsedValue : 0
 }
 
 function getRecipeIdFromPath(path) {
@@ -113,8 +123,14 @@ function App() {
         })
 
         const payload = await response.json().catch(() => null)
+        const lastLoginAt = getLastAuthLoginAt()
 
         if (response.status === 401 || response.status === 403) {
+          if (lastLoginAt > 0 && Date.now() - lastLoginAt < AUTH_REFRESH_GRACE_PERIOD_MS) {
+            window.localStorage.setItem('isAuthenticated', 'true')
+            return
+          }
+
           clearAuthState()
           navigate('/login', { replace: true })
           return
@@ -134,7 +150,7 @@ function App() {
       }
     }
 
-    refreshSession()
+    const initialRefreshTimeoutId = window.setTimeout(refreshSession, AUTH_REFRESH_INITIAL_DELAY_MS)
     const intervalId = window.setInterval(refreshSession, REFRESH_INTERVAL_MS)
 
     const handleVisibilityChange = () => {
@@ -147,6 +163,7 @@ function App() {
 
     return () => {
       isActive = false
+      window.clearTimeout(initialRefreshTimeoutId)
       window.clearInterval(intervalId)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }

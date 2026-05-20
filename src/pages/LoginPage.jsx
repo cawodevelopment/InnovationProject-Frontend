@@ -108,6 +108,7 @@ function LoginPage() {
       }
 
       window.localStorage.setItem('isAuthenticated', 'true')
+      window.localStorage.setItem('authLastLoginAt', String(Date.now()))
 
       setApiResult({
         type: 'success',
