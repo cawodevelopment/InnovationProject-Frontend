@@ -26,6 +26,15 @@ function formatList(items) {
   return items.join(', ')
 }
 
+function getRecipeId(recipe) {
+  if (!recipe || typeof recipe !== 'object') {
+    return ''
+  }
+
+  const id = recipe.id ?? recipe.recipeId ?? recipe._id
+  return id === undefined || id === null ? '' : String(id)
+}
+
 function RecipeDetailSkeleton() {
   return (
     <div className="recipe-results recipe-results-loading">
@@ -102,6 +111,14 @@ function RefineRecipePage({ voicePromptRequest = null, voicePromptLiveText = '' 
     return `${normalizedBaseUrl.replace(/\/$/, '')}/recipes`
   }, [])
 
+  const recipeDetailEndpoint = useMemo(() => {
+    if (!recipeId) {
+      return ''
+    }
+
+    return `${recipesEndpoint.replace(/\/$/, '')}/${encodeURIComponent(recipeId)}`
+  }, [recipeId, recipesEndpoint])
+
   useEffect(() => {
     let isActive = true
 
@@ -110,7 +127,7 @@ function RefineRecipePage({ voicePromptRequest = null, voicePromptLiveText = '' 
       setErrorMessage('')
 
       try {
-        const response = await fetch(recipesEndpoint, {
+        const response = await fetch(recipeDetailEndpoint, {
           method: 'GET',
           credentials: 'include',
         })
@@ -131,8 +148,15 @@ function RefineRecipePage({ voicePromptRequest = null, voicePromptLiveText = '' 
           return
         }
 
+        const directRecipe = payload?.data && !Array.isArray(payload.data) ? payload.data : null
+
+        if (directRecipe) {
+          setRecipe(directRecipe)
+          return
+        }
+
         const recipeList = Array.isArray(payload?.data) ? payload.data : []
-        const selectedRecipe = recipeList.find((item) => item.id === recipeId)
+        const selectedRecipe = recipeList.find((item) => String(getRecipeId(item)) === String(recipeId))
 
         if (!selectedRecipe) {
           setErrorMessage('Recipe not found')
@@ -166,7 +190,7 @@ function RefineRecipePage({ voicePromptRequest = null, voicePromptLiveText = '' 
     return () => {
       isActive = false
     }
-  }, [recipeId, recipesEndpoint])
+  }, [recipeDetailEndpoint, recipeId])
 
   const handlePromptKeyDown = (event) => {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) {
